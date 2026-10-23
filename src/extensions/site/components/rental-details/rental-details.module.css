@@ -1,0 +1,8 @@
+.rentalDetails {
+  width: 100%;
+  min-height: 20rem;
+}
+
+.fallbackDirection:not([dir]) {
+  direction: var(--wix-opt-in-direction);
+}

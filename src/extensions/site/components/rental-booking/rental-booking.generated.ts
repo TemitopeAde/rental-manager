@@ -151,67 +151,31 @@ export const editorElement = {
         }
       }
     },
-    "rentalBookingField": {
+    "rdpWeeks": {
       "elementType": "inlineElement",
       "inlineElement": {
-        "selector": ".rental-booking-field",
-        "displayName": "Field",
+        "selector": ".rdp-weeks",
+        "displayName": "Rdp Weeks",
         "behaviors": {
           "removable": true,
           "selectable": false
         },
         "cssProperties": {
-          "font": {
-            "defaultValue": "400 16px sans-serif"
-          },
-          "lineHeight": {},
-          "letterSpacing": {},
-          "textDecorationLine": {},
-          "textTransform": {},
-          "textAlign": {},
-          "textShadow": {},
-          "color": {
-            "defaultValue": "#1a1a1a"
-          },
-          "background": {
-            "defaultValue": "#ffffff"
-          },
-          "borderTop": {
-            "defaultValue": "1px solid #c7c7c7"
-          },
-          "borderBottom": {
-            "defaultValue": "1px solid #c7c7c7"
-          },
-          "borderInlineStart": {
-            "defaultValue": "1px solid #c7c7c7"
-          },
-          "borderInlineEnd": {
-            "defaultValue": "1px solid #c7c7c7"
-          },
+          "background": {},
+          "borderTop": {},
+          "borderBottom": {},
+          "borderInlineStart": {},
+          "borderInlineEnd": {},
           "paddingTop": {},
           "paddingBottom": {},
-          "paddingInlineStart": {
-            "defaultValue": "12px"
-          },
-          "paddingInlineEnd": {
-            "defaultValue": "12px"
-          },
-          "borderStartStartRadius": {
-            "defaultValue": "6px"
-          },
-          "borderStartEndRadius": {
-            "defaultValue": "6px"
-          },
-          "borderEndStartRadius": {
-            "defaultValue": "6px"
-          },
-          "borderEndEndRadius": {
-            "defaultValue": "6px"
-          },
+          "paddingInlineStart": {},
+          "paddingInlineEnd": {},
+          "borderStartStartRadius": {},
+          "borderStartEndRadius": {},
+          "borderEndStartRadius": {},
+          "borderEndEndRadius": {},
           "boxShadow": {},
-          "width": {
-            "defaultValue": "100%"
-          },
+          "width": {},
           "height": {},
           "overflow": {},
           "mixBlendMode": {},
@@ -219,42 +183,11 @@ export const editorElement = {
             "display": {
               "displayValues": [
                 "none",
-                "flex"
+                "tableRowGroup"
               ]
             }
           },
-          "marginTop": {},
-          "marginBottom": {},
-          "marginInlineStart": {},
-          "marginInlineEnd": {},
-          "flexDirection": {
-            "defaultValue": "column"
-          },
-          "justifyContent": {},
-          "alignItems": {},
           "alignSelf": {}
-        },
-        "states": {
-          "hover": {
-            "displayName": "Hover",
-            "className": "rental-booking-field--hover",
-            "pseudoClass": "hover"
-          },
-          "focus": {
-            "displayName": "Focus",
-            "className": "rental-booking-field--focus",
-            "pseudoClass": "focus"
-          },
-          "disabled": {
-            "displayName": "Disabled",
-            "className": "rental-booking-field--disabled",
-            "pseudoClass": "disabled"
-          },
-          "invalid": {
-            "displayName": "Invalid",
-            "className": "rental-booking-field--invalid",
-            "pseudoClass": "invalid"
-          }
         }
       }
     },

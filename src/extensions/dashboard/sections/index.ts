@@ -1,6 +1,7 @@
 export { BookingsSection } from './bookings';
 export { CalendarSection } from './calendar';
 export { ItemsSection } from './items';
+export { MembersAreaNotice } from './members-area';
 export { SettingsSection } from './settings';
 export { DashboardDataProvider, useDashboard } from './shared';
 export { TodaySection } from './today';

@@ -17,7 +17,7 @@ export default extensions.customElement({
     {
       id: '25216d3c-8e4c-49f7-a974-4305344f85ab',
       name: 'default',
-      thumbnailUrl: '{{BASE_URL}}/rental-booking-thumbnail.png',
+      thumbnailUrl: '{{BASE_URL}}/my-rentals-thumbnail.png',
     },
   ],
 

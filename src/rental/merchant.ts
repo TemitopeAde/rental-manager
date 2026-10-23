@@ -111,6 +111,7 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.defaultLeadDays !== undefined) next.defaultLeadDays = patch.defaultLeadDays;
   if (patch.countReturnDay !== undefined) next.countReturnDay = patch.countReturnDay;
   if (patch.emailSenderName) next.emailSenderName = patch.emailSenderName;
+  if (patch.membersAreaInstalled !== undefined) next.membersAreaInstalled = patch.membersAreaInstalled;
   if (patch.currency) next.currency = patch.currency;
   if (patch.storeCategoryId !== undefined) next.storeCategoryId = patch.storeCategoryId;
   if (patch.storeCategoryName !== undefined) next.storeCategoryName = patch.storeCategoryName;

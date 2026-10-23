@@ -96,6 +96,8 @@ export interface Settings {
   defaultLeadDays: number;
   countReturnDay: boolean;
   emailSenderName: string;
+  // Confirmed from the dashboard; online bookings stay closed until the Members Area is installed.
+  membersAreaInstalled: boolean;
   currency: string;
   storeCategoryId: string;
   storeCategoryName: string;

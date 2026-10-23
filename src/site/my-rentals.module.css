@@ -172,6 +172,35 @@
   gap: 0.5rem;
 }
 
+.buttonContent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.spinner {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: rm-my-rentals-spin 0.7s linear infinite;
+}
+
+@keyframes rm-my-rentals-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
 .action,
 .secondary,
 .danger,
@@ -276,6 +305,41 @@
 
 .empty p {
   margin: 0;
+}
+
+/* Loading placeholders; same shimmer as the catalog widget's skeleton cards. */
+.skeleton {
+  block-size: 0.8rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rm-text, #1a1a1a) 6%, transparent) 0%,
+    color-mix(in srgb, var(--rm-text, #1a1a1a) 11%, transparent) 50%,
+    color-mix(in srgb, var(--rm-text, #1a1a1a) 6%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: rm-my-rentals-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton[data-shape='label'] { inline-size: 5.5rem; block-size: 0.7rem; }
+.skeleton[data-shape='title'] { inline-size: 11rem; max-inline-size: 60cqi; block-size: 1.05rem; }
+.skeleton[data-shape='reference'] { inline-size: 5rem; block-size: 0.7rem; margin-block-start: 0.35rem; }
+.skeleton[data-shape='pill'] { inline-size: 5.5rem; block-size: 1.5rem; }
+.skeleton[data-shape='term'] { inline-size: 3.5rem; block-size: 0.65rem; }
+.skeleton[data-shape='value'] { inline-size: 70%; block-size: 0.95rem; margin-block-start: 0.4rem; }
+.skeleton[data-shape='button'] {
+  inline-size: 8rem;
+  block-size: 2.6rem;
+  border-radius: var(--rm-radius-value);
+}
+
+@keyframes rm-my-rentals-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 @container rm-my-rentals (max-width: 380px) {

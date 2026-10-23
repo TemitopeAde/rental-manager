@@ -139,6 +139,11 @@ export async function holdRental(input: HoldRequest) {
   const prior = existing.items[0];
   if (prior) return { ok: true as const, booking: asBooking(prior as Row), replayed: true };
 
+  const gate = await loadSettings(merchant);
+  if (!gate.membersAreaInstalled) {
+    return { ok: false as const, message: "Online booking isn't open yet. The shop is still finishing its setup." };
+  }
+
   const plan = await readPlan(merchant);
   const monthStart = new Date();
   monthStart.setUTCDate(1);

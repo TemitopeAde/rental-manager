@@ -8,6 +8,7 @@ import {
   CalendarSection,
   DashboardDataProvider,
   ItemsSection,
+  MembersAreaNotice,
   SettingsSection,
   ToastProvider,
   TodaySection,
@@ -94,6 +95,7 @@ function Shell() {
             </div>
             {plan ? <Badge variant="outline" className="capitalize md:hidden">{plan.tier} plan</Badge> : null}
           </div>
+          <MembersAreaNotice />
           {active === 'today' ? <TodaySection onNavigate={open} /> : null}
           {active === 'bookings' ? <BookingsSection /> : null}
           {active === 'calendar' ? <CalendarSection /> : null}

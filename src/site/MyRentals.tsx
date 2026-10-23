@@ -146,7 +146,7 @@ export function MyRentals({
         {description ? <p className={styles.lede}>{description}</p> : null}
       </header>
 
-      {phase === 'loading' ? <p className={styles.muted}>Loading your rentals…</p> : null}
+      {phase === 'loading' ? <BookingsSkeleton /> : null}
 
       {phase === 'signed-out' ? (
         <div className={styles.empty}>
@@ -182,6 +182,38 @@ export function MyRentals({
         )
       ) : null}
     </section>
+  );
+}
+
+// Placeholder cards shaped like BookingCard, shown while the bookings load.
+function BookingsSkeleton() {
+  return (
+    <div className={styles.group} role="status" aria-busy="true" aria-label="Loading your rentals">
+      <div className={styles.skeleton} data-shape="label" />
+      {[0, 1].map((index) => (
+        <div key={index} className={styles.card} aria-hidden="true">
+          <div className={styles.cardTop}>
+            <div className={styles.cardTitle}>
+              <div className={styles.skeleton} data-shape="title" />
+              <div className={styles.skeleton} data-shape="reference" />
+            </div>
+            <div className={styles.skeleton} data-shape="pill" />
+          </div>
+          <div className={styles.facts}>
+            {[0, 1, 2, 3].map((fact) => (
+              <div key={fact}>
+                <div className={styles.skeleton} data-shape="term" />
+                <div className={styles.skeleton} data-shape="value" />
+              </div>
+            ))}
+          </div>
+          <div className={styles.actions}>
+            <div className={styles.skeleton} data-shape="button" />
+            <div className={styles.skeleton} data-shape="button" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -284,8 +316,11 @@ function BookingCard({
           <p>Ask the shop to cancel {booking.itemName} for {dateRange(booking.startDate, booking.endDate)}? Your rental stays booked until the shop confirms.</p>
           <div className={styles.actions}>
             <button type="button" className={styles.secondary} disabled={busy} onClick={() => setMode('view')}>Keep rental</button>
-            <button type="button" className={styles.dangerSolid} disabled={busy} onClick={() => void run({ action: 'cancel' })}>
-              {busy ? 'Sending…' : 'Request cancellation'}
+            <button type="button" className={styles.dangerSolid} disabled={busy} aria-busy={busy} onClick={() => void run({ action: 'cancel' })}>
+              <span className={styles.buttonContent}>
+                {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
+                <span>Request cancellation</span>
+              </span>
             </button>
           </div>
         </div>
@@ -356,9 +391,13 @@ function ChangeDates({
           type="button"
           className={styles.action}
           disabled={busy || !startDate || !endDate || (!preview && !quote?.ok)}
+          aria-busy={busy}
           onClick={() => onSubmit(startDate, endDate)}
         >
-          {busy ? 'Sending…' : 'Request new dates'}
+          <span className={styles.buttonContent}>
+            {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
+            <span>Request new dates</span>
+          </span>
         </button>
       </div>
     </div>

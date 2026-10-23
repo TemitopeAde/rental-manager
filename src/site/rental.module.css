@@ -299,6 +299,35 @@
   transition: filter 0.15s ease, transform 0.1s ease;
 }
 
+.buttonContent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.spinner {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: rm-spin 0.7s linear infinite;
+}
+
+@keyframes rm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
 .action:hover:not(:disabled) {
   filter: brightness(1.08);
 }

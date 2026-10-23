@@ -1,0 +1,8 @@
+.myRentals {
+  width: 100%;
+  min-height: 14rem;
+}
+
+.fallbackDirection:not([dir]) {
+  direction: var(--wix-opt-in-direction);
+}

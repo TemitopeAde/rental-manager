@@ -247,8 +247,11 @@ export function RentalBookingForm({
       {quote && !quote.ok ? <p className={styles.notice} data-tone="error" role="alert">{quote.message}</p> : null}
       {message ? <p className={styles.notice} data-tone={message.tone} role="status">{message.text}</p> : null}
 
-      <button {...parts?.button} className={partClass(styles.action, parts?.button)} type="submit" disabled={busy || !ready}>
-        {busy ? 'Holding your dates…' : buttonLabel}
+      <button {...parts?.button} className={partClass(styles.action, parts?.button)} type="submit" disabled={busy || !ready} aria-busy={busy}>
+        <span className={styles.buttonContent}>
+          {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
+          <span>{buttonLabel}</span>
+        </span>
       </button>
     </form>
   );
