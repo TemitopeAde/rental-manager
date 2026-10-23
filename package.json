@@ -27,6 +27,7 @@
     "@wix/design-system": "^1.338.0",
     "@wix/ecom": "^1.0.2571",
     "@wix/editor": "^1.356.0",
+    "@wix/email-transmissions": "^1.0.13",
     "@wix/essentials": "^0.1.23",
     "@wix/members": "^1.0.535",
     "@wix/react-component-schema": "^1.8.0",

@@ -27,7 +27,7 @@ interface RenterBooking {
   status: Status;
   quote: Quote;
   refundNeeded: boolean;
-  changeRequest?: { startDate: string; endDate: string; quote: Quote; status: 'pending' | 'declined' };
+  changeRequest?: { type: 'dates' | 'cancel'; startDate: string; endDate: string; quote: Quote; status: 'pending' | 'declined' };
 }
 
 const statusLabel: Record<Status, string> = {
@@ -254,12 +254,16 @@ function BookingCard({
 
       {request?.status === 'pending' ? (
         <p className={styles.notice} data-tone="info">
-          You asked to move this rental to {dateRange(request.startDate, request.endDate)}. Waiting for the shop to confirm.
+          {request.type === 'cancel'
+            ? 'You asked to cancel this rental. Waiting for the shop to confirm.'
+            : `You asked to move this rental to ${dateRange(request.startDate, request.endDate)}. Waiting for the shop to confirm.`}
         </p>
       ) : null}
       {request?.status === 'declined' ? (
         <p className={styles.notice} data-tone="error">
-          The shop couldn't move this rental to {dateRange(request.startDate, request.endDate)}.
+          {request.type === 'cancel'
+            ? "The shop couldn't cancel this rental, so it stays booked."
+            : `The shop couldn't move this rental to ${dateRange(request.startDate, request.endDate)}.`}
         </p>
       ) : null}
       {booking.status === 'cancelled' && booking.refundNeeded ? (
@@ -268,22 +272,20 @@ function BookingCard({
 
       {message ? <p className={styles.notice} data-tone={message.tone} role="status">{message.text}</p> : null}
 
-      {canChange && mode === 'view' ? (
+      {canChange && mode === 'view' && request?.status !== 'pending' ? (
         <div className={styles.actions}>
-          {request?.status !== 'pending' ? (
-            <button type="button" className={styles.secondary} onClick={() => { setMessage(null); setMode('change'); }}>Change dates</button>
-          ) : null}
+          <button type="button" className={styles.secondary} onClick={() => { setMessage(null); setMode('change'); }}>Change dates</button>
           <button type="button" className={styles.danger} onClick={() => { setMessage(null); setMode('cancel'); }}>Cancel rental</button>
         </div>
       ) : null}
 
       {mode === 'cancel' ? (
         <div className={styles.confirm}>
-          <p>Cancel {booking.itemName} for {dateRange(booking.startDate, booking.endDate)}? This can't be undone.</p>
+          <p>Ask the shop to cancel {booking.itemName} for {dateRange(booking.startDate, booking.endDate)}? Your rental stays booked until the shop confirms.</p>
           <div className={styles.actions}>
             <button type="button" className={styles.secondary} disabled={busy} onClick={() => setMode('view')}>Keep rental</button>
             <button type="button" className={styles.dangerSolid} disabled={busy} onClick={() => void run({ action: 'cancel' })}>
-              {busy ? 'Cancelling…' : 'Yes, cancel'}
+              {busy ? 'Sending…' : 'Request cancellation'}
             </button>
           </div>
         </div>

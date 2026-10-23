@@ -27,6 +27,7 @@ export interface BookingRow {
   quote: { days: number; rental: number; deposit: number; total: number };
   depositOutcome?: { outcome: 'released' | 'kept'; amountKept: number; note: string };
   changeRequest?: {
+    type: 'dates' | 'cancel';
     startDate: string;
     endDate: string;
     quote: { days: number; rental: number; deposit: number; total: number };

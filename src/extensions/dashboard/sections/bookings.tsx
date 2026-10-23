@@ -55,8 +55,8 @@ export function useBookingActions(onDone: () => Promise<void> | void) {
         pickup: `${reference} marked as picked up.`,
         returned: `${reference} marked as returned.`,
         settle: `Deposit for ${reference} settled.`,
-        'change-approve': result.message || `${reference} moved to the new dates.`,
-        'change-decline': `Date change for ${reference} declined.`,
+        'change-approve': result.message || `${reference} updated.`,
+        'change-decline': result.message || `Request for ${reference} declined.`,
         cancel: result.refundOrderId
           ? `${reference} cancelled. Refund Wix order ${result.refundOrderId} from the Orders page.`
           : `${reference} cancelled.`,
@@ -190,7 +190,9 @@ export function BookingsSection() {
                     <TableCell>
                       <StatusBadge status={row.status} refundNeeded={row.refundNeeded} />
                       {row.changeRequest?.status === 'pending' ? (
-                        <span className="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-300">Date change requested</span>
+                        <span className="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-300">
+                          {row.changeRequest.type === 'cancel' ? 'Cancellation requested' : 'Date change requested'}
+                        </span>
                       ) : null}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{money(row.quote.total)}</TableCell>
@@ -229,6 +231,25 @@ function ChangeRequestPanel({ booking, act, busy }: {
   const request = booking.changeRequest;
   if (!request) return null;
   const difference = request.quote.total - booking.quote.total;
+  if (request.type === 'cancel') {
+    return (
+      <section className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-500/40 dark:bg-amber-500/10">
+        <h3 className="font-medium">Renter asked to cancel</h3>
+        <p className="text-muted-foreground">
+          Approving frees the dates and emails the renter.
+          {booking.ecomOrderId ? ` You'll still need to refund Wix order ${booking.ecomOrderId}.` : ''}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="destructive" disabled={busy !== null} onClick={() => void act(booking.reference, 'change-approve')}>
+            {busy === `${booking.reference}:change-approve` ? 'Saving…' : 'Approve cancellation'}
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void act(booking.reference, 'change-decline')}>
+            Keep booking
+          </Button>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-500/40 dark:bg-amber-500/10">
       <h3 className="font-medium">Renter asked to change dates</h3>
@@ -236,7 +257,7 @@ function ChangeRequestPanel({ booking, act, busy }: {
         <p className="text-muted-foreground line-through">{formatRange(booking.startDate, booking.endDate)}</p>
         <p className="font-medium">{formatRange(request.startDate, request.endDate)} · {request.quote.days} {request.quote.days === 1 ? 'day' : 'days'}</p>
         <p className="text-muted-foreground">
-          New total {money(request.quote.total)}
+          The renter is emailed either way. New total {money(request.quote.total)}
           {difference > 0 ? ` · collect ${money(difference)} more` : difference < 0 ? ` · refund ${money(-difference)}` : ' · no price change'}
         </p>
       </div>

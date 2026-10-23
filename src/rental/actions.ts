@@ -7,6 +7,7 @@ import { text } from './models';
 import { readPlan } from './plans';
 import { getRow, insertRow, queryRows, updateRow, type Row } from './store';
 import { claimUnitsForBooking } from './claim';
+import { emailRequestResolved } from './emails';
 
 const merchant = { elevate: true };
 
@@ -114,21 +115,43 @@ export async function transition(
   return { ok: true as const, booking: asBooking(updated), refundOrderId: '' };
 }
 
-// Applies or turns down a renter's date change request. Approving re-checks the new dates, moves the
-// unit claims, and reprices; any price difference is left for the merchant to settle on the order.
-export async function resolveDateChange(referenceOrId: string, decision: 'approve' | 'decline', source: string) {
+// Applies or turns down a renter's request. A cancellation runs the normal cancel transition. A date change
+// re-checks the new dates, moves the unit claims, and reprices; any price difference is left for the merchant
+// to settle on the order. Either way the renter is emailed the outcome.
+export async function resolveChangeRequest(referenceOrId: string, decision: 'approve' | 'decline', source: string) {
   const booking = await findBooking(referenceOrId);
   if (!booking) return { ok: false as const, message: 'Booking not found.' };
   const request = booking.changeRequest;
   if (!request || request.status !== 'pending') {
-    return { ok: false as const, message: `${booking.reference} has no pending date change.` };
+    return { ok: false as const, message: `${booking.reference} has no pending request.` };
   }
   const row = await getRow(collections.bookings, booking._id, merchant);
   if (!row) return { ok: false as const, message: 'Booking not found.' };
+  const isCancel = request.type === 'cancel';
   if (decision === 'decline') {
-    const updated = await updateRow(collections.bookings, { ...row, changeRequest: { ...request, status: 'declined' } }, merchant);
-    await audit('change-decline', `Declined move to ${request.startDate} – ${request.endDate}.`, booking._id, source);
-    return { ok: true as const, booking: asBooking(updated), message: 'Date change declined.' };
+    const updated = asBooking(await updateRow(collections.bookings, { ...row, changeRequest: { ...request, status: 'declined' } }, merchant));
+    await audit(
+      isCancel ? 'cancel-decline' : 'change-decline',
+      isCancel ? 'Declined cancellation request.' : `Declined move to ${request.startDate} – ${request.endDate}.`,
+      booking._id,
+      source,
+    );
+    await emailRequestResolved(booking, updated, false);
+    return { ok: true as const, booking: updated, message: isCancel ? 'Cancellation declined.' : 'Date change declined.' };
+  }
+  if (isCancel) {
+    const result = await transition(booking._id, 'cancel', source, 'Cancelled at renter\'s request');
+    if (!result.ok) return result;
+    const cleared = await getRow(collections.bookings, booking._id, merchant);
+    const updated = cleared ? asBooking(await updateRow(collections.bookings, { ...cleared, changeRequest: null }, merchant)) : result.booking;
+    await emailRequestResolved(booking, updated, true);
+    return {
+      ok: true as const,
+      booking: updated,
+      message: booking.ecomOrderId
+        ? `${booking.reference} cancelled. Refund Wix order ${booking.ecomOrderId} from the Orders page.`
+        : `${booking.reference} cancelled.`,
+    };
   }
   if (booking.status !== 'pending' && booking.status !== 'confirmed') {
     return { ok: false as const, message: `${booking.reference} is ${booking.status} and its dates can't change.` };
@@ -154,11 +177,11 @@ export async function resolveDateChange(referenceOrId: string, decision: 'approv
     await reclaim(booking);
     return { ok: false as const, message: 'Those dates are no longer free.' };
   }
-  const updated = await updateRow(
+  const updated = asBooking(await updateRow(
     collections.bookings,
     { ...row, startDate: request.startDate, endDate: request.endDate, quote: availability.quote, changeRequest: null },
     merchant,
-  );
+  ));
   const difference = availability.quote.total - booking.quote.total;
   const settle = difference === 0
     ? 'Price unchanged.'
@@ -171,7 +194,13 @@ export async function resolveDateChange(referenceOrId: string, decision: 'approv
     booking._id,
     source,
   );
-  return { ok: true as const, booking: asBooking(updated), message: `Dates updated. ${settle}` };
+  const renterNote = difference > 0
+    ? `Your new total is ${difference.toFixed(2)} higher; the shop will be in touch about the difference.`
+    : difference < 0
+      ? `Your new total is ${(-difference).toFixed(2)} lower; the shop will refund the difference.`
+      : '';
+  await emailRequestResolved(booking, updated, true, renterNote);
+  return { ok: true as const, booking: updated, message: `Dates updated. ${settle}` };
 }
 
 export async function settleDeposit(referenceOrId: string, amountKept: number, note: string, source: string) {

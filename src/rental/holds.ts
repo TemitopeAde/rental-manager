@@ -31,6 +31,7 @@ function asChangeRequest(value: unknown): DateChangeRequest | undefined {
   const request = value as Record<string, unknown>;
   if (!text(request.startDate) || !text(request.endDate)) return undefined;
   return {
+    type: text(request.type) === 'cancel' ? 'cancel' : 'dates',
     startDate: text(request.startDate),
     endDate: text(request.endDate),
     quote: asQuote(request.quote),

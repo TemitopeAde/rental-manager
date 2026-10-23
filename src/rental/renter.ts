@@ -1,8 +1,9 @@
 import { collections } from './constants';
-import { findBooking, transition, audit } from './actions';
+import { findBooking, audit } from './actions';
 import { loadItem, loadSettings } from './availability';
+import { emailRequestReceived } from './emails';
 import { asBooking, quoteRental } from './holds';
-import type { Booking } from './models';
+import type { Booking, DateChangeRequest } from './models';
 import type { SiteMember } from './guard';
 import { getRow, queryRows, updateRow, type Row } from './store';
 
@@ -54,16 +55,42 @@ async function ownedBooking(reference: string, member: SiteMember) {
   return booking && ownsBooking(booking, member) ? booking : null;
 }
 
+// Saves a pending request on the booking, then emails the owner and the renter. Nothing else changes yet.
+async function fileRequest(booking: Booking, request: Omit<DateChangeRequest, 'requestedAt' | 'status'>) {
+  if (booking.changeRequest?.status === 'pending') {
+    return { ok: false as const, status: 400, message: 'You already have a request waiting for the shop.' };
+  }
+  const row = await getRow(collections.bookings, booking._id, merchant);
+  if (!row) return { ok: false as const, status: 404, message: 'Booking not found.' };
+  const changeRequest: DateChangeRequest = { ...request, requestedAt: new Date().toISOString(), status: 'pending' };
+  const updated = asBooking(await updateRow(collections.bookings, { ...row, changeRequest }, merchant));
+  await audit(
+    request.type === 'cancel' ? 'cancel-request' : 'change-request',
+    request.type === 'cancel'
+      ? 'Renter asked to cancel.'
+      : `Renter asked to move to ${request.startDate} – ${request.endDate}.`,
+    booking._id,
+    'renter',
+  );
+  await emailRequestReceived(updated);
+  return { ok: true as const, status: 200 };
+}
+
 export async function renterCancel(reference: string, member: SiteMember) {
   const booking = await ownedBooking(reference, member);
   if (!booking) return { ok: false as const, status: 404, message: 'Booking not found.' };
   if (!changeable.includes(booking.status)) {
     return { ok: false as const, status: 400, message: 'This booking can no longer be cancelled online.' };
   }
-  const result = await transition(booking._id, 'cancel', 'renter', 'Cancelled by renter');
+  const result = await fileRequest(booking, {
+    type: 'cancel',
+    startDate: booking.startDate,
+    endDate: booking.endDate,
+    quote: booking.quote,
+  });
   return result.ok
-    ? { ok: true as const, status: 200, message: 'Cancelled. The shop will refund your payment.' }
-    : { ok: false as const, status: 400, message: result.message };
+    ? { ...result, message: 'Cancellation requested. The shop will confirm by email.' }
+    : result;
 }
 
 // Prices new dates for an existing booking without counting the units it already holds.
@@ -84,17 +111,8 @@ export async function quoteDateChange(reference: string, startDate: string, endD
 export async function requestDateChange(reference: string, startDate: string, endDate: string, member: SiteMember) {
   const quoted = await quoteDateChange(reference, startDate, endDate, member);
   if (!quoted.ok) return quoted;
-  const { booking, quote } = quoted;
-  if (booking.changeRequest?.status === 'pending') {
-    return { ok: false as const, status: 400, message: 'You already have a date change waiting for the shop.' };
-  }
-  const row = await getRow(collections.bookings, booking._id, merchant);
-  if (!row) return { ok: false as const, status: 404, message: 'Booking not found.' };
-  await updateRow(
-    collections.bookings,
-    { ...row, changeRequest: { startDate, endDate, quote, requestedAt: new Date().toISOString(), status: 'pending' } },
-    merchant,
-  );
-  await audit('change-request', `Renter asked to move to ${startDate} – ${endDate}.`, booking._id, 'renter');
-  return { ok: true as const, status: 200, message: 'Request sent. The shop will confirm your new dates.' };
+  const result = await fileRequest(quoted.booking, { type: 'dates', startDate, endDate, quote: quoted.quote });
+  return result.ok
+    ? { ...result, message: 'Request sent. The shop will confirm your new dates by email.' }
+    : result;
 }

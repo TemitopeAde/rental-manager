@@ -53,7 +53,9 @@ export interface Renter {
   phone: string;
 }
 
+// A renter's request to move or cancel a paid booking; nothing changes until the site owner approves.
 export interface DateChangeRequest {
+  type: 'dates' | 'cancel';
   startDate: string;
   endDate: string;
   quote: Quote;

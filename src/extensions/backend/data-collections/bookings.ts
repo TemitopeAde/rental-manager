@@ -91,6 +91,7 @@ export default {
       type: 'OBJECT',
       objectOptions: {
         fields: [
+          { key: 'type', displayName: 'Type', type: 'TEXT' },
           { key: 'startDate', displayName: 'Pickup', type: 'TEXT' },
           { key: 'endDate', displayName: 'Return', type: 'TEXT' },
           { key: 'quote', displayName: 'Quote', ...quote },
