@@ -1,0 +1,8 @@
+.root {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--rm-background, transparent);
+  color: var(--rm-text, inherit);
+  font: var(--rm-body-font, inherit);
+  text-decoration: var(--rm-body-decoration, none);
+}
