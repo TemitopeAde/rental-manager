@@ -18,6 +18,9 @@ export default {
     { key: 'countReturnDay', displayName: 'Count Return Day', type: 'BOOLEAN' },
     { key: 'emailSenderName', displayName: 'Email Sender Name', type: 'TEXT' },
     { key: 'currency', displayName: 'Currency', type: 'TEXT' },
+    { key: 'storeCategoryId', displayName: 'Wix Store Rental Category ID', type: 'TEXT' },
+    { key: 'storeCategoryName', displayName: 'Wix Store Rental Category Name', type: 'TEXT' },
+    { key: 'storeCategoryVersion', displayName: 'Wix Store Catalog Version', type: 'TEXT' },
   ],
   dataPermissions: {
     itemRead: 'CMS_EDITOR',

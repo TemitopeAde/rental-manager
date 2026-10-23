@@ -1,5 +1,5 @@
-import { type CSSProperties, type FC, type ReactNode } from 'react';
-import { inputs } from '@wix/editor';
+import { type CSSProperties, type FC, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { inputs, widget } from '@wix/editor';
 import {
   Accordion,
   accordionItemBuilder,
@@ -9,8 +9,12 @@ import {
   FillPreview,
   FormField,
   Input,
-  NumberInput,
+  InputArea,
+  SectionHelper,
+  SegmentedToggle,
   SidePanel,
+  Slider,
+  Text,
   ToggleSwitch,
   WixDesignSystemProvider,
 } from '@wix/design-system';
@@ -21,7 +25,7 @@ export type FontValue = {
 };
 
 export const headingFont: FontValue = {
-  font: '700 20px/1.3 sans-serif',
+  font: '700 22px/1.25 sans-serif',
   textDecoration: '',
 };
 
@@ -59,6 +63,7 @@ export function appearanceStyle(values: {
   onAccent?: string;
   card?: string;
   border?: string;
+  radius?: number;
   headingFont?: FontValue;
   bodyFont?: FontValue;
   buttonFont?: FontValue;
@@ -74,6 +79,7 @@ export function appearanceStyle(values: {
   assign('--rm-on-accent', values.onAccent);
   assign('--rm-card', values.card);
   assign('--rm-border', values.border);
+  assign('--rm-radius', values.radius !== undefined && Number.isFinite(values.radius) ? `${values.radius}px` : undefined);
   assign('--rm-heading-font', values.headingFont?.font);
   assign('--rm-heading-decoration', values.headingFont?.textDecoration);
   assign('--rm-body-font', values.bodyFont?.font);
@@ -83,33 +89,78 @@ export function appearanceStyle(values: {
   return style;
 }
 
+// Loads every widget prop named in `defaults` once, then keeps local state and the
+// widget in sync. Values are stored as strings, the way widget props travel.
+export function usePanelProps<K extends string>(defaults: Record<K, string>) {
+  const [values, setValues] = useState(defaults);
+
+  useEffect(() => {
+    const names = Object.keys(defaults) as K[];
+    Promise.all(names.map((name) => widget.getProp(name)))
+      .then((stored) => {
+        setValues((current) => {
+          const next = { ...current };
+          names.forEach((name, index) => {
+            if (stored[index]) next[name] = stored[index];
+          });
+          return next;
+        });
+      })
+      .catch((error) => console.error('Failed to load widget settings', error));
+    // The defaults object is a constant per panel; load once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = useCallback((name: K, value: string) => {
+    setValues((current) => ({ ...current, [name]: value }));
+    widget.setProp(name, value);
+  }, []);
+
+  return [values, set] as const;
+}
+
 export const TextSetting: FC<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-}> = ({ label, value, onChange, placeholder }) => (
+  multiline?: boolean;
+}> = ({ label, value, onChange, placeholder, multiline }) => (
   <SidePanel.Field>
     <FormField label={label}>
-      <Input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      {multiline ? (
+        <InputArea
+          size="small"
+          rows={3}
+          resizable
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <Input size="small" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      )}
     </FormField>
   </SidePanel.Field>
 );
 
-export const NumberSetting: FC<{
+export const SliderSetting: FC<{
   label: string;
   value: number;
   min: number;
   max: number;
+  step?: number;
   onChange: (value: number) => void;
-}> = ({ label, value, min, max, onChange }) => (
+}> = ({ label, value, min, max, step = 1, onChange }) => (
   <SidePanel.Field>
     <FormField label={label}>
-      <NumberInput
+      <Slider
         value={value}
         min={min}
         max={max}
-        onChange={(next) => onChange(next ?? min)}
+        step={step}
+        displayMarks={false}
+        onChange={(next) => onChange(Array.isArray(next) ? next[0] : next)}
       />
     </FormField>
   </SidePanel.Field>
@@ -121,8 +172,28 @@ export const SwitchSetting: FC<{
   onChange: (checked: boolean) => void;
 }> = ({ label, checked, onChange }) => (
   <SidePanel.Field>
+    <Box align="space-between" verticalAlign="middle">
+      <Text size="small">{label}</Text>
+      <ToggleSwitch size="small" checked={checked} onChange={() => onChange(!checked)} />
+    </Box>
+  </SidePanel.Field>
+);
+
+export const SegmentedSetting: FC<{
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}> = ({ label, value, options, onChange }) => (
+  <SidePanel.Field>
     <FormField label={label}>
-      <ToggleSwitch checked={checked} onChange={() => onChange(!checked)} />
+      <SegmentedToggle size="small" selected={value} onClick={(_, next) => onChange(next)}>
+        {options.map((option) => (
+          <SegmentedToggle.Button key={option.value} value={option.value}>
+            {option.label}
+          </SegmentedToggle.Button>
+        ))}
+      </SegmentedToggle>
     </FormField>
   </SidePanel.Field>
 );
@@ -132,10 +203,14 @@ export const ChoiceSetting: FC<{
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
-}> = ({ label, value, options, onChange }) => (
+  placeholder?: string;
+  status?: ReactNode;
+}> = ({ label, value, options, onChange, placeholder, status }) => (
   <SidePanel.Field>
-    <FormField label={label}>
+    <FormField label={label} infoContent={status}>
       <Dropdown
+        size="small"
+        placeholder={placeholder}
         selectedId={value}
         options={options.map((option) => ({ id: option.value, value: option.label }))}
         onSelect={(option) => onChange(String(option.id))}
@@ -150,8 +225,9 @@ const ColorField: FC<{ label: string; value: string; onChange: (value: string) =
   onChange,
 }) => (
   <SidePanel.Field>
-    <FormField label={label}>
-      <Box width="30px" height="30px">
+    <Box align="space-between" verticalAlign="middle">
+      <Text size="small">{label}</Text>
+      <Box width="28px" height="28px">
         <FillPreview
           fill={value}
           onClick={() => inputs.selectColor(value, {
@@ -161,7 +237,7 @@ const ColorField: FC<{ label: string; value: string; onChange: (value: string) =
           })}
         />
       </Box>
-    </FormField>
+    </Box>
   </SidePanel.Field>
 );
 
@@ -184,9 +260,15 @@ const FontField: FC<{ label: string; value: FontValue; onChange: (value: FontVal
           }),
         })}
       >
-        Change font
+        Aa · Change font
       </Button>
     </FormField>
+  </SidePanel.Field>
+);
+
+export const PanelNote: FC<{ children: ReactNode }> = ({ children }) => (
+  <SidePanel.Field>
+    <SectionHelper appearance="standard" size="small">{children}</SectionHelper>
   </SidePanel.Field>
 );
 
@@ -200,7 +282,7 @@ export const SettingsAccordion: FC<{
     items={sections.map((section) => accordionItemBuilder({
       title: section.title,
       initiallyOpen: section.initiallyOpen === true,
-      children: section.children,
+      children: <Box direction="vertical" paddingBottom="SP2">{section.children}</Box>,
     }))}
   />
 );
@@ -217,5 +299,29 @@ export function PanelShell({ title, children }: { title: string; children: React
     </WixDesignSystemProvider>
   );
 }
+
+// Theme presets applied in one click; each sets every colour prop at once.
+export const themes: Array<{ id: string; label: string; colors: Record<string, string> }> = [
+  {
+    id: 'classic',
+    label: 'Classic',
+    colors: { background: '#ffffff', card: '#ffffff', text: '#1a1a1a', heading: '#111111', accent: '#116dff', onAccent: '#ffffff', border: '#e3e3e3' },
+  },
+  {
+    id: 'warm',
+    label: 'Warm',
+    colors: { background: '#fbf7f2', card: '#ffffff', text: '#3b2f2a', heading: '#2a1f1a', accent: '#c4622d', onAccent: '#ffffff', border: '#eadfd3' },
+  },
+  {
+    id: 'forest',
+    label: 'Forest',
+    colors: { background: '#f3f6f2', card: '#ffffff', text: '#24302a', heading: '#17231c', accent: '#2f6b4f', onAccent: '#ffffff', border: '#d9e2db' },
+  },
+  {
+    id: 'night',
+    label: 'Night',
+    colors: { background: '#121417', card: '#1c1f24', text: '#e6e8eb', heading: '#ffffff', accent: '#7aa7ff', onAccent: '#0d1117', border: '#30353d' },
+  },
+];
 
 export { ColorField, FontField };

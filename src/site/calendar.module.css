@@ -1,0 +1,161 @@
+.root {
+  --rm-cal-cell: 2.5rem;
+  position: relative;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.month {
+  flex: 1 1 15rem;
+  min-inline-size: 0;
+}
+
+.caption {
+  display: flex;
+  align-items: center;
+  block-size: 2.25rem;
+  padding-inline: 0.25rem;
+}
+
+.captionLabel {
+  font: var(--rm-heading-font, 600 15px/1.3 sans-serif);
+  font-size: 0.95rem;
+  color: var(--rm-heading-color, inherit);
+}
+
+.nav {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.navButton {
+  display: grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--rm-border, #d9d9d9);
+  border-radius: 999px;
+  background: var(--rm-card, #fff);
+  color: var(--rm-text, inherit);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.navButton:hover:not(:disabled) {
+  border-color: var(--rm-accent, #116dff);
+}
+
+.navButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.navButton:focus-visible,
+.dayButton:focus-visible {
+  outline: 2px solid var(--rm-accent, #116dff);
+  outline-offset: 2px;
+}
+
+.chevron {
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  fill: currentColor;
+}
+
+.grid {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.25rem;
+  table-layout: fixed;
+}
+
+.weekday {
+  padding-block: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.day {
+  padding: 0;
+  text-align: center;
+}
+
+.dayButton {
+  inline-size: 100%;
+  max-inline-size: var(--rm-cal-cell);
+  aspect-ratio: 1;
+  margin-inline: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.day:not(.disabled):not(.selected) .dayButton:hover {
+  background: color-mix(in srgb, var(--rm-accent, #116dff) 12%, transparent);
+}
+
+.today .dayButton {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.outside {
+  opacity: 0.35;
+}
+
+.disabled .dayButton {
+  opacity: 0.3;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+.rangeMiddle {
+  background: color-mix(in srgb, var(--rm-accent, #116dff) 14%, transparent);
+}
+
+.rangeStart,
+.rangeEnd {
+  background: color-mix(in srgb, var(--rm-accent, #116dff) 14%, transparent);
+}
+
+.rangeStart {
+  border-start-start-radius: 999px;
+  border-end-start-radius: 999px;
+}
+
+.rangeEnd {
+  border-start-end-radius: 999px;
+  border-end-end-radius: 999px;
+}
+
+.rangeStart .dayButton,
+.rangeEnd .dayButton,
+.selected:not(.rangeMiddle) .dayButton {
+  background: var(--rm-accent, #116dff);
+  color: var(--rm-on-accent, #fff);
+  font-weight: 600;
+}

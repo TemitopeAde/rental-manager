@@ -30,6 +30,12 @@ export const POST: APIRoute = async ({ request }) => {
     countReturnDay: typeof body.countReturnDay === 'boolean' ? body.countReturnDay : undefined,
     emailSenderName: str(body.emailSenderName) || undefined,
     currency: str(body.currency) || undefined,
+    storeCategoryId: str(body.storeCategoryId),
+    storeCategoryName: str(body.storeCategoryName),
+    storeCategoryVersion:
+      str(body.storeCategoryVersion) === 'V1_CATALOG' || str(body.storeCategoryVersion) === 'V3_CATALOG'
+        ? (str(body.storeCategoryVersion) as 'V1_CATALOG' | 'V3_CATALOG')
+        : undefined,
   });
   return json({ settings });
 };

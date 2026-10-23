@@ -18,7 +18,13 @@ async function saveStatus(row: Row, status: BookingStatus, extra: Record<string,
   return updateRow(collections.bookings, { ...row, ...extra, status }, merchant);
 }
 
-export async function confirmPaid(bookingId: string, orderId: string, lineItemId: string, renter: Booking['renter']) {
+export async function confirmPaid(
+  bookingId: string,
+  orderId: string,
+  lineItemId: string,
+  renter: Booking['renter'],
+  memberId = '',
+) {
   await expireHolds();
   const row = await getRow(collections.bookings, bookingId, merchant);
   if (!row) return { ok: false as const, message: 'Booking not found.' };
@@ -42,6 +48,7 @@ export async function confirmPaid(bookingId: string, orderId: string, lineItemId
   const updated = await saveStatus(row, next, {
     ecomOrderId: orderId,
     cartLineItemId: lineItemId,
+    memberId: memberId || booking.memberId,
     renter: {
       name: renter.name || booking.renter.name,
       email: renter.email || booking.renter.email,
@@ -105,6 +112,66 @@ export async function transition(
   const updated = await saveStatus(row, next);
   await audit(action, `${booking.reference} marked ${next}.`, booking._id, source);
   return { ok: true as const, booking: asBooking(updated), refundOrderId: '' };
+}
+
+// Applies or turns down a renter's date change request. Approving re-checks the new dates, moves the
+// unit claims, and reprices; any price difference is left for the merchant to settle on the order.
+export async function resolveDateChange(referenceOrId: string, decision: 'approve' | 'decline', source: string) {
+  const booking = await findBooking(referenceOrId);
+  if (!booking) return { ok: false as const, message: 'Booking not found.' };
+  const request = booking.changeRequest;
+  if (!request || request.status !== 'pending') {
+    return { ok: false as const, message: `${booking.reference} has no pending date change.` };
+  }
+  const row = await getRow(collections.bookings, booking._id, merchant);
+  if (!row) return { ok: false as const, message: 'Booking not found.' };
+  if (decision === 'decline') {
+    const updated = await updateRow(collections.bookings, { ...row, changeRequest: { ...request, status: 'declined' } }, merchant);
+    await audit('change-decline', `Declined move to ${request.startDate} – ${request.endDate}.`, booking._id, source);
+    return { ok: true as const, booking: asBooking(updated), message: 'Date change declined.' };
+  }
+  if (booking.status !== 'pending' && booking.status !== 'confirmed') {
+    return { ok: false as const, message: `${booking.reference} is ${booking.status} and its dates can't change.` };
+  }
+  const plan = await readPlan(merchant);
+  const settings = await loadSettings(merchant);
+  const item = await loadItem(booking.itemId, merchant);
+  if (!item) return { ok: false as const, message: 'Item not found.' };
+  const availability = await checkRange(
+    item,
+    settings,
+    request.startDate,
+    request.endDate,
+    booking.quantity,
+    plan.perItemRules,
+    merchant,
+    booking._id,
+  );
+  if (!availability.ok || !availability.quote) return { ok: false as const, message: availability.message };
+  await releaseUnits(booking._id);
+  const claimed = await claimUnitsForBooking(booking.itemId, booking._id, booking.quantity, availability.occupied, item.unitCount);
+  if (!claimed) {
+    await reclaim(booking);
+    return { ok: false as const, message: 'Those dates are no longer free.' };
+  }
+  const updated = await updateRow(
+    collections.bookings,
+    { ...row, startDate: request.startDate, endDate: request.endDate, quote: availability.quote, changeRequest: null },
+    merchant,
+  );
+  const difference = availability.quote.total - booking.quote.total;
+  const settle = difference === 0
+    ? 'Price unchanged.'
+    : difference > 0
+      ? `Collect ${difference.toFixed(2)} more from the renter.`
+      : `Refund ${(-difference).toFixed(2)} on Wix order ${booking.ecomOrderId || '(none)'}.`;
+  await audit(
+    'change-approve',
+    `Moved from ${booking.startDate} – ${booking.endDate} to ${request.startDate} – ${request.endDate}. ${settle}`,
+    booking._id,
+    source,
+  );
+  return { ok: true as const, booking: asBooking(updated), message: `Dates updated. ${settle}` };
 }
 
 export async function settleDeposit(referenceOrId: string, amountKept: number, note: string, source: string) {

@@ -20,6 +20,8 @@ function BookingElement(props: {
   accentColor?: string;
   buttonTextColor?: string;
   borderColor?: string;
+  cornerRadius?: number;
+  monthsShown?: number;
   headingFont?: string;
   bodyFont?: string;
   buttonFont?: string;
@@ -35,6 +37,7 @@ function BookingElement(props: {
         accent: props.accentColor,
         onAccent: props.buttonTextColor,
         border: props.borderColor,
+        radius: props.cornerRadius,
         headingFont: props.headingFont ? parseFont(props.headingFont, headingFont) : undefined,
         bodyFont: props.bodyFont ? parseFont(props.bodyFont, bodyFont) : undefined,
         buttonFont: props.buttonFont ? parseFont(props.buttonFont, buttonFont) : undefined,
@@ -48,6 +51,7 @@ function BookingElement(props: {
         showDeposit={props.showDeposit}
         showWeeklyPrice={props.showWeeklyPrice}
         showQuantity={props.showQuantity}
+        monthsShown={props.monthsShown}
       />
     </div>
   );
@@ -69,6 +73,8 @@ export default reactToWebComponent(BookingElement, React, ReactDOM, {
     accentColor: 'string',
     buttonTextColor: 'string',
     borderColor: 'string',
+    cornerRadius: 'number',
+    monthsShown: 'number',
     headingFont: 'string',
     bodyFont: 'string',
     buttonFont: 'string',

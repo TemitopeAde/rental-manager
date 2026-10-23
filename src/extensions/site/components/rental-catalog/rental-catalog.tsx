@@ -36,7 +36,7 @@ const RentalCatalog: FC<RentalCatalogProps> = (props) => {
         parts={{
           title: partClass('rental-catalog-title', styles.title, elementProps?.title?.className),
           field: partClass('rental-catalog-field', styles.field, elementProps?.field?.className),
-          card: partClass('rental-catalog-card', styles.card, elementProps?.card?.className),
+          card: { className: classNames('rental-catalog-card', elementProps?.card?.className) },
           price: partClass('rental-catalog-price', styles.price, elementProps?.price?.className),
           button: partClass('rental-catalog-button', styles.button, elementProps?.button?.className),
         }}

@@ -5,5 +5,5 @@ export default extensions.dashboardPage({
   title: 'Rentals',
   routePath: '',
   component: './extensions/dashboard/pages/my-page/my-page.tsx',
-  fullPage: true,
+  fullPage: false,
 });

@@ -27,4 +27,6 @@ export const itemSchema = z.object({
   bufferDays: z.coerce.number().int().min(0).default(0),
   leadDays: z.coerce.number().int().min(0).default(1),
   status: z.enum(['active', 'hidden', 'archived']).default('active'),
+  storeProductId: z.string().optional(),
+  storeRentalOverride: z.enum(['inherit', 'enabled', 'disabled']).default('inherit'),
 });

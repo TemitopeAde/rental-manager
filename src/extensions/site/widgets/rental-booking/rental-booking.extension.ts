@@ -4,14 +4,14 @@ export default extensions.customElement({
   id: 'b31550aa-e85a-4482-bb3c-520500fe6ee7',
   name: 'Rental Booking',
   width: {
-    defaultWidth: 450,
+    defaultWidth: 480,
     allowStretch: true
   },
   height: {
-    defaultHeight: 250
+    defaultHeight: 760
   },
   installation: {
-    autoAdd: true
+    autoAdd: false
   },
   presets: [
     {

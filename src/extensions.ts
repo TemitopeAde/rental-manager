@@ -21,5 +21,11 @@ import rentalBooking1 from './extensions/site/widgets/rental-booking/rental-book
 
 import rentalCatalog1 from './extensions/site/widgets/rental-catalog/rental-catalog.extension.ts';
 
+import rentalDetails from './extensions/site/widgets/rental-details/rental-details.extension.ts';
+
+import myRentals from './extensions/site/widgets/my-rentals/my-rentals.extension.ts';
+
+import rentalStoreProduct from './extensions/site/plugins/rental-store-product/rental-store-product.extension.ts';
+
 export default app()
-  .use(myPage).use(dataCollections).use(orderApproved).use(orderCanceled).use(rentalTools).use(rentalTools1).use(rentalCatalogPlugin).use(rentalBooking).use(rentalCatalog).use(rentalBooking1).use(rentalCatalog1);
+  .use(myPage).use(dataCollections).use(orderApproved).use(orderCanceled).use(rentalTools).use(rentalTools1).use(rentalCatalogPlugin).use(rentalBooking).use(rentalCatalog).use(rentalBooking1).use(rentalCatalog1).use(rentalDetails).use(rentalStoreProduct).use(myRentals);

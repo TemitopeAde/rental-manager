@@ -4,14 +4,14 @@ export default extensions.customElement({
   id: '99d509c0-caa2-4701-8489-771780d8505a',
   name: 'Rental Catalog',
   width: {
-    defaultWidth: 450,
+    defaultWidth: 980,
     allowStretch: true
   },
   height: {
-    defaultHeight: 250
+    defaultHeight: 560
   },
   installation: {
-    autoAdd: true
+    autoAdd: false
   },
   presets: [
     {

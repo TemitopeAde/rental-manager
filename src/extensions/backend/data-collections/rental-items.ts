@@ -2,6 +2,49 @@ import type { DataCollection } from '@wix/astro/builders';
 
 export const collectionIdSuffix = 'rental-items';
 
+// Seeded on install so a new site has something to look at. Fixed IDs let the sample bookings
+// point at them. Only two, so a Free plan site (3 items) can still add its own.
+export const sampleItemIds = { camera: 'sample-camera-kit', tent: 'sample-camping-tent' } as const;
+
+const sampleItems = [
+  {
+    _id: sampleItemIds.camera,
+    name: 'Camera kit (sample)',
+    description: 'A sample rental item. Edit it to make it yours, or archive it from the Items tab.',
+    slug: 'sample-camera-kit',
+    category: 'Cameras',
+    unitCount: 2,
+    dailyRate: 45,
+    weeklyRate: 220,
+    depositAmount: 150,
+    minDays: 2,
+    maxDays: 30,
+    bufferDays: 1,
+    leadDays: 1,
+    status: 'active',
+    storeProductId: '',
+    storeRentalOverride: 'inherit',
+  },
+  {
+    _id: sampleItemIds.tent,
+    name: 'Four-person tent (sample)',
+    description: 'A sample rental item. Edit it to make it yours, or archive it from the Items tab.',
+    slug: 'sample-camping-tent',
+    category: 'Camping',
+    unitCount: 3,
+    dailyRate: 18,
+    weeklyRate: 90,
+    depositAmount: 40,
+    minDays: 1,
+    maxDays: 21,
+    bufferDays: 0,
+    leadDays: 1,
+    status: 'active',
+    storeProductId: '',
+    storeRentalOverride: 'inherit',
+  },
+];
+
 export default {
   idSuffix: collectionIdSuffix,
   displayName: 'Rental Items',
@@ -21,6 +64,8 @@ export default {
     { key: 'bufferDays', displayName: 'Buffer Days', type: 'NUMBER' },
     { key: 'leadDays', displayName: 'Lead Days', type: 'NUMBER' },
     { key: 'status', displayName: 'Status', type: 'TEXT' },
+    { key: 'storeProductId', displayName: 'Wix Store Product ID', type: 'TEXT' },
+    { key: 'storeRentalOverride', displayName: 'Store Rental Override', type: 'TEXT' },
   ],
   dataPermissions: {
     itemRead: 'ANYONE',
@@ -29,5 +74,5 @@ export default {
     itemRemove: 'CMS_EDITOR',
   },
   indexes: [{ fields: [{ path: 'slug' }], unique: true }],
-  initialData: [],
+  initialData: sampleItems,
 } satisfies DataCollection;

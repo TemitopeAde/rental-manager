@@ -1,94 +1,51 @@
-import { type FC, useCallback, useEffect, useState } from 'react';
-import { widget } from '@wix/editor';
+import type { FC } from 'react';
 import '@wix/design-system/styles.global.css';
+import { designDefaults, designSections } from '../design-sections';
 import {
-  bodyFont,
-  buttonFont,
-  ChoiceSetting,
-  ColorField,
-  FontField,
-  headingFont,
-  NumberSetting,
+  PanelNote,
   PanelShell,
-  parseFont,
+  SegmentedSetting,
   SettingsAccordion,
+  SliderSetting,
   SwitchSetting,
   TextSetting,
-  type FontValue,
+  usePanelProps,
 } from '../panel-fields';
 
+const defaults = {
+  title: 'Rentals',
+  'details-page': '/rental-details',
+  'button-label': 'View details',
+  columns: '3',
+  'page-size': '12',
+  'price-basis': 'daily',
+  'image-ratio': 'square',
+  'image-hover': 'swap',
+  'text-align': 'start',
+  'show-button': 'true',
+  'show-sort': 'true',
+  'show-ribbon': 'true',
+  'show-category-filter': 'true',
+  'show-description': 'false',
+  ...designDefaults,
+};
+
+type Toggle = 'show-button' | 'show-sort' | 'show-category-filter' | 'show-ribbon' | 'show-description';
+
+const toggleLabels: Record<Toggle, string> = {
+  'show-button': 'Button on each item',
+  'show-sort': 'Sort menu',
+  'show-category-filter': 'Category filter',
+  'show-ribbon': 'Category ribbon on image',
+  'show-description': 'Item descriptions',
+};
+
 const Panel: FC = () => {
-  const [title, setTitle] = useState('Rentals');
-  const [columns, setColumns] = useState(3);
-  const [pageSize, setPageSize] = useState(12);
-  const [priceBasis, setPriceBasis] = useState('daily');
-  const [showCategoryFilter, setShowCategoryFilter] = useState(true);
-  const [background, setBackground] = useState('#ffffff');
-  const [card, setCard] = useState('#ffffff');
-  const [text, setText] = useState('#1a1a1a');
-  const [heading, setHeading] = useState('#1a1a1a');
-  const [accent, setAccent] = useState('#116dff');
-  const [onAccent, setOnAccent] = useState('#ffffff');
-  const [border, setBorder] = useState('#e0e0e0');
-  const [headingType, setHeadingType] = useState<FontValue>(headingFont);
-  const [bodyType, setBodyType] = useState<FontValue>(bodyFont);
-  const [buttonType, setButtonType] = useState<FontValue>(buttonFont);
+  const [values, set] = usePanelProps(defaults);
 
-  useEffect(() => {
-    Promise.all([
-      widget.getProp('title'),
-      widget.getProp('columns'),
-      widget.getProp('page-size'),
-      widget.getProp('price-basis'),
-      widget.getProp('show-category-filter'),
-      widget.getProp('background-color'),
-      widget.getProp('card-color'),
-      widget.getProp('text-color'),
-      widget.getProp('heading-color'),
-      widget.getProp('accent-color'),
-      widget.getProp('button-text-color'),
-      widget.getProp('border-color'),
-      widget.getProp('heading-font'),
-      widget.getProp('body-font'),
-      widget.getProp('button-font'),
-    ]).then(([
-      nextTitle,
-      nextColumns,
-      nextPageSize,
-      basis,
-      categoryFilter,
-      nextBackground,
-      nextCard,
-      nextText,
-      nextHeading,
-      nextAccent,
-      nextOnAccent,
-      nextBorder,
-      nextHeadingFont,
-      nextBodyFont,
-      nextButtonFont,
-    ]) => {
-      if (nextTitle) setTitle(nextTitle);
-      if (nextColumns) setColumns(Number(nextColumns) || 3);
-      if (nextPageSize) setPageSize(Number(nextPageSize) || 12);
-      if (basis) setPriceBasis(basis);
-      if (categoryFilter === 'false') setShowCategoryFilter(false);
-      if (nextBackground) setBackground(nextBackground);
-      if (nextCard) setCard(nextCard);
-      if (nextText) setText(nextText);
-      if (nextHeading) setHeading(nextHeading);
-      if (nextAccent) setAccent(nextAccent);
-      if (nextOnAccent) setOnAccent(nextOnAccent);
-      if (nextBorder) setBorder(nextBorder);
-      if (nextHeadingFont) setHeadingType(parseFont(nextHeadingFont, headingFont));
-      if (nextBodyFont) setBodyType(parseFont(nextBodyFont, bodyFont));
-      if (nextButtonFont) setButtonType(parseFont(nextButtonFont, buttonFont));
-    }).catch((error) => console.error('Failed to load catalog settings', error));
-  }, []);
-
-  const save = useCallback((name: string, value: string) => {
-    widget.setProp(name, value);
-  }, []);
+  const toggle = (name: Toggle) => (
+    <SwitchSetting key={name} label={toggleLabels[name]} checked={values[name] === 'true'} onChange={(checked) => set(name, String(checked))} />
+  );
 
   return (
     <PanelShell title="Rental catalog">
@@ -99,50 +56,67 @@ const Panel: FC = () => {
             initiallyOpen: true,
             children: (
               <>
-                <TextSetting label="Catalog heading" value={title} onChange={(value) => { setTitle(value); save('title', value); }} />
-                <ChoiceSetting
-                  label="Price"
-                  value={priceBasis}
-                  options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]}
-                  onChange={(value) => { setPriceBasis(value); save('price-basis', value); }}
+                <TextSetting label="Heading" value={values.title} placeholder="Leave empty to hide" onChange={(value) => set('title', value)} />
+                <TextSetting label="Details page URL" value={values['details-page']} placeholder="/rental-details" onChange={(value) => set('details-page', value)} />
+                <PanelNote>Add a page with the Rental Details widget and enter its URL here. Each item opens it as ?slug=item-slug.</PanelNote>
+                <TextSetting label="Button label" value={values['button-label']} onChange={(value) => set('button-label', value)} />
+                <SegmentedSetting
+                  label="Show price per"
+                  value={values['price-basis']}
+                  options={[{ value: 'daily', label: 'Day' }, { value: 'weekly', label: 'Week' }]}
+                  onChange={(value) => set('price-basis', value)}
                 />
+                {(Object.keys(toggleLabels) as Toggle[]).map(toggle)}
               </>
             ),
           },
           {
             title: 'Layout',
+            initiallyOpen: true,
             children: (
               <>
-                <NumberSetting label="Columns" value={columns} min={1} max={4} onChange={(value) => { setColumns(value); save('columns', String(value)); }} />
-                <NumberSetting label="Items per page" value={pageSize} min={1} max={48} onChange={(value) => { setPageSize(value); save('page-size', String(value)); }} />
-                <SwitchSetting label="Category filter" checked={showCategoryFilter} onChange={(checked) => { setShowCategoryFilter(checked); save('show-category-filter', String(checked)); }} />
+                <SegmentedSetting
+                  label="Columns"
+                  value={values.columns}
+                  options={['1', '2', '3', '4'].map((value) => ({ value, label: value }))}
+                  onChange={(value) => set('columns', value)}
+                />
+                <SliderSetting
+                  label={`Items before "Load more" · ${values['page-size']}`}
+                  value={Number(values['page-size']) || 12}
+                  min={1}
+                  max={48}
+                  onChange={(value) => set('page-size', String(value))}
+                />
+                <SegmentedSetting
+                  label="Text alignment"
+                  value={values['text-align']}
+                  options={[{ value: 'start', label: 'Left' }, { value: 'center', label: 'Center' }]}
+                  onChange={(value) => set('text-align', value)}
+                />
               </>
             ),
           },
           {
-            title: 'Colors',
+            title: 'Images',
             children: (
               <>
-                <ColorField label="Background" value={background} onChange={(value) => { setBackground(value); save('background-color', value); }} />
-                <ColorField label="Card" value={card} onChange={(value) => { setCard(value); save('card-color', value); }} />
-                <ColorField label="Text" value={text} onChange={(value) => { setText(value); save('text-color', value); }} />
-                <ColorField label="Heading color" value={heading} onChange={(value) => { setHeading(value); save('heading-color', value); }} />
-                <ColorField label="Button" value={accent} onChange={(value) => { setAccent(value); save('accent-color', value); }} />
-                <ColorField label="Button text" value={onAccent} onChange={(value) => { setOnAccent(value); save('button-text-color', value); }} />
-                <ColorField label="Border" value={border} onChange={(value) => { setBorder(value); save('border-color', value); }} />
+                <SegmentedSetting
+                  label="Image shape"
+                  value={values['image-ratio']}
+                  options={[{ value: 'square', label: 'Square' }, { value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }]}
+                  onChange={(value) => set('image-ratio', value)}
+                />
+                <SegmentedSetting
+                  label="On hover"
+                  value={values['image-hover']}
+                  options={[{ value: 'swap', label: 'Second image' }, { value: 'zoom', label: 'Zoom' }, { value: 'none', label: 'None' }]}
+                  onChange={(value) => set('image-hover', value)}
+                />
               </>
             ),
           },
-          {
-            title: 'Typography',
-            children: (
-              <>
-                <FontField label="Heading font" value={headingType} onChange={(value) => { setHeadingType(value); save('heading-font', JSON.stringify(value)); }} />
-                <FontField label="Body font" value={bodyType} onChange={(value) => { setBodyType(value); save('body-font', JSON.stringify(value)); }} />
-                <FontField label="Button font" value={buttonType} onChange={(value) => { setButtonType(value); save('button-font', JSON.stringify(value)); }} />
-              </>
-            ),
-          },
+          ...designSections(values, set),
         ]}
       />
     </PanelShell>

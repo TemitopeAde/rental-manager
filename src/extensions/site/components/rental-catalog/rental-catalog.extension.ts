@@ -30,7 +30,7 @@ export default extensions.editorReactComponent({
     initialSize: {
       width: {
         sizingType: LAYOUT.SIZING_TYPE.pixels,
-        pixels: 250,
+        pixels: 980,
       },
       height: {
         sizingType: LAYOUT.SIZING_TYPE.content,

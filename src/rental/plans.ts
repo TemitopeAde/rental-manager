@@ -44,12 +44,21 @@ const LIMITS: Record<PlanTier, PlanLimits> = {
   },
 };
 
+// Sites owned by a verified @wix.com account get every feature regardless of billing.
+// ownerInfo is only returned when the app has the "Read Site Owner Email" permission.
+function isWixStaffOwner(owner?: { email?: string; emailStatus?: string }): boolean {
+  const email = (owner?.email ?? '').trim().toLowerCase();
+  const verified = (owner?.emailStatus ?? '').startsWith('VERIFIED');
+  return verified && email.endsWith('@wix.com');
+}
+
 export async function readPlan(access: Access): Promise<PlanLimits> {
   try {
     const getInstance = access.elevate
       ? auth.elevate(appInstances.getAppInstance)
       : appInstances.getAppInstance;
     const response = await getInstance();
+    if (isWixStaffOwner(response.site?.ownerInfo)) return LIMITS.pro;
     const instance = response.instance;
     if (!instance || instance.isFree || !instance.billing) return LIMITS.free;
     const name = (instance.billing.packageName ?? '').toLowerCase();

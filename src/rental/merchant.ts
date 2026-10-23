@@ -10,6 +10,7 @@ import { text } from './models';
 import { readPlan } from './plans';
 import { defaultSettings } from './availability';
 import { insertRow, queryRows, removeRow, updateRow, getRow, type Row } from './store';
+import { getCatalogState, getStoreProduct, listStoreCategories, productMatchesCategory } from './stores';
 
 const merchant = { elevate: true };
 
@@ -19,6 +20,24 @@ export async function listItems(category?: string, status?: string) {
   if (status) query = query.eq('status', status);
   const result = await query.ascending('name').limit(200).find();
   return result.items.map((row) => asItem(row as Row));
+}
+
+// Category tabs come from every active item, not the filtered page, so they stay put while filtering.
+export async function listCategories() {
+  const result = await queryRows(collections.items, merchant).eq('status', 'active').distinct('category');
+  return (result.items as unknown[])
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .sort((a, b) => a.localeCompare(b));
+}
+
+// Visitor-facing lookup for the details widget. Items added straight in the CMS may have no
+// slug, so the catalog links those by ID and this accepts either.
+export async function findActiveItem(slugOrId: string) {
+  const bySlug = await queryRows(collections.items, merchant).eq('slug', slugOrId).limit(1).find();
+  const row = (bySlug.items[0] as Row | undefined) ?? (await getRow(collections.items, slugOrId, merchant).catch(() => null));
+  if (!row) return null;
+  const item = asItem(row);
+  return item.status === 'active' ? item : null;
 }
 
 export async function createItem(input: Partial<RentalItem>) {
@@ -48,6 +67,8 @@ export async function createItem(input: Partial<RentalItem>) {
       bufferDays: input.bufferDays ?? 0,
       leadDays: input.leadDays ?? 1,
       status: input.status ?? 'active',
+      storeProductId: input.storeProductId ?? '',
+      storeRentalOverride: input.storeRentalOverride ?? 'inherit',
     },
     merchant,
   );
@@ -62,6 +83,7 @@ export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   const fields: Array<keyof RentalItem> = [
     'name', 'description', 'slug', 'category', 'unitCount', 'dailyRate', 'weeklyRate',
     'depositAmount', 'minDays', 'maxDays', 'bufferDays', 'leadDays', 'status',
+    'storeProductId', 'storeRentalOverride',
   ];
   for (const field of fields) {
     if (patch[field] !== undefined) (next as Record<string, unknown>)[field] = patch[field];
@@ -90,10 +112,70 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.countReturnDay !== undefined) next.countReturnDay = patch.countReturnDay;
   if (patch.emailSenderName) next.emailSenderName = patch.emailSenderName;
   if (patch.currency) next.currency = patch.currency;
+  if (patch.storeCategoryId !== undefined) next.storeCategoryId = patch.storeCategoryId;
+  if (patch.storeCategoryName !== undefined) next.storeCategoryName = patch.storeCategoryName;
+  if ('storeCategoryVersion' in patch) next.storeCategoryVersion = patch.storeCategoryVersion;
   const saved = current
     ? await updateRow(collections.settings, next, merchant)
     : await insertRow(collections.settings, next, merchant);
   return loadSettingsFrom(saved);
+}
+
+export async function storeCategories() {
+  return listStoreCategories();
+}
+
+/**
+ * Resolves a Store product into a Rental Item only when the category/override
+ * rules make it rentable. Store product fields are refreshed on each request;
+ * rental-specific fields remain merchant-owned values in Rental Items.
+ */
+export async function resolveStoreRentalItem(productId: string) {
+  const [settings, version, product] = await Promise.all([
+    loadSettings(merchant),
+    getCatalogState(),
+    getStoreProduct(productId),
+  ]);
+  if (!product || !product.physical || !product.visible || product.dailyRate <= 0) return null;
+
+  const found = await queryRows(collections.items, merchant).eq('storeProductId', productId).limit(1).find();
+  const existing = found.items[0] as Row | undefined;
+  const override = text(existing?.storeRentalOverride, 'inherit');
+  const explicit = override === 'enabled' || override === 'disabled' ? override : 'inherit';
+  const inCategory = settings.storeCategoryVersion === version && productMatchesCategory(product, settings.storeCategoryId);
+  const enabled = explicit === 'enabled' || (explicit === 'inherit' && inCategory);
+  if (!enabled) return null;
+
+  const base = existing ?? {
+    _id: '',
+    name: product.name,
+    description: product.description,
+    slug: `store-${product.id}`,
+    category: settings.storeCategoryName,
+    unitCount: 1,
+    dailyRate: product.dailyRate,
+    weeklyRate: 0,
+    depositAmount: 0,
+    minDays: settings.defaultMinDays,
+    maxDays: settings.defaultMaxDays,
+    bufferDays: settings.defaultBufferDays,
+    leadDays: settings.defaultLeadDays,
+    status: 'active',
+    storeProductId: product.id,
+    storeRentalOverride: explicit,
+  } satisfies Row;
+  const next: Row = {
+    ...base,
+    name: product.name || base.name,
+    description: product.description || base.description,
+    dailyRate: product.dailyRate,
+    category: existing ? text(existing.category) : settings.storeCategoryName,
+    storeProductId: product.id,
+    storeRentalOverride: explicit,
+    status: text(base.status, 'active'),
+  };
+  const saved = existing ? await updateRow(collections.items, next, merchant) : await insertRow(collections.items, next, merchant);
+  return asItem(saved);
 }
 
 function loadSettingsFrom(row: Row) {

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { findBooking, listBookings, settleDeposit, transition } from '../../../rental/actions';
+import { findBooking, listBookings, resolveDateChange, settleDeposit, transition } from '../../../rental/actions';
 import { merchantOnly } from '../../../rental/guard';
 import { json, readJson, str, int } from '../../../rental/http';
 import { createManualBooking } from '../../../rental/merchant';
@@ -39,6 +39,10 @@ export const POST: APIRoute = async ({ request }) => {
   }
   if (action === 'settle') {
     const result = await settleDeposit(str(body.reference), Number(body.amountKept ?? 0), str(body.note), 'dashboard');
+    return json(result, result.ok ? 200 : 400);
+  }
+  if (action === 'change-approve' || action === 'change-decline') {
+    const result = await resolveDateChange(str(body.reference), action === 'change-approve' ? 'approve' : 'decline', 'dashboard');
     return json(result, result.ok ? 200 : 400);
   }
   if (action === 'approve' || action === 'decline' || action === 'pickup' || action === 'returned' || action === 'cancel') {

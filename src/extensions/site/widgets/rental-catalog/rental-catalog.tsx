@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import reactToWebComponent from 'react-to-webcomponent';
-import { RentalCatalogGrid } from '../../../../site/RentalCatalogGrid';
+import { RentalCatalogGrid, type ImageHover, type ImageRatio } from '../../../../site/RentalCatalogGrid';
 import { appearanceStyle, bodyFont, buttonFont, headingFont, parseFont } from '../panel-fields';
 import styles from './rental-catalog.module.css';
 
@@ -18,6 +18,16 @@ function CatalogElement(props: {
   accentColor?: string;
   buttonTextColor?: string;
   borderColor?: string;
+  cornerRadius?: number;
+  showDescription?: boolean;
+  showSort?: boolean;
+  showRibbon?: boolean;
+  showButton?: boolean;
+  buttonLabel?: string;
+  detailsPage?: string;
+  imageRatio?: string;
+  imageHover?: string;
+  textAlign?: string;
   headingFont?: string;
   bodyFont?: string;
   buttonFont?: string;
@@ -33,6 +43,7 @@ function CatalogElement(props: {
         accent: props.accentColor,
         onAccent: props.buttonTextColor,
         border: props.borderColor,
+        radius: props.cornerRadius,
         headingFont: props.headingFont ? parseFont(props.headingFont, headingFont) : undefined,
         bodyFont: props.bodyFont ? parseFont(props.bodyFont, bodyFont) : undefined,
         buttonFont: props.buttonFont ? parseFont(props.buttonFont, buttonFont) : undefined,
@@ -44,6 +55,15 @@ function CatalogElement(props: {
         pageSize={props.pageSize}
         priceBasis={props.priceBasis}
         showCategoryFilter={props.showCategoryFilter}
+        showDescription={props.showDescription}
+        showSort={props.showSort}
+        showRibbon={props.showRibbon}
+        showButton={props.showButton}
+        buttonLabel={props.buttonLabel}
+        detailsPage={props.detailsPage}
+        imageRatio={props.imageRatio as ImageRatio | undefined}
+        imageHover={props.imageHover as ImageHover | undefined}
+        textAlign={props.textAlign === 'center' ? 'center' : 'start'}
       />
     </div>
   );
@@ -63,6 +83,16 @@ export default reactToWebComponent(CatalogElement, React, ReactDOM, {
     accentColor: 'string',
     buttonTextColor: 'string',
     borderColor: 'string',
+    cornerRadius: 'number',
+    showDescription: 'boolean',
+    showSort: 'boolean',
+    showRibbon: 'boolean',
+    showButton: 'boolean',
+    buttonLabel: 'string',
+    detailsPage: 'string',
+    imageRatio: 'string',
+    imageHover: 'string',
+    textAlign: 'string',
     headingFont: 'string',
     bodyFont: 'string',
     buttonFont: 'string',

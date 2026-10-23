@@ -1,17 +1,19 @@
 import { collections, ALL_ITEMS } from './constants';
 import { addDays, eachDate, isDateString, todayInTimezone } from './dates';
 import type { Quote, RentalItem, Settings } from './models';
-import { bool, num, text } from './models';
+import { bool, images, num, text } from './models';
 import { quotePrice, rentalLength } from './pricing';
 import { getRow, queryRows, type Access, type Row } from './store';
 
 export function asItem(row: Row): RentalItem {
   const status = text(row.status, 'active');
+  const name = text(row.name);
   return {
     _id: row._id,
-    name: text(row.name),
+    name,
     description: text(row.description),
     slug: text(row.slug),
+    images: images(row.images, name),
     category: text(row.category),
     unitCount: Math.max(1, num(row.unitCount, 1)),
     dailyRate: num(row.dailyRate),
@@ -22,6 +24,11 @@ export function asItem(row: Row): RentalItem {
     bufferDays: Math.max(0, num(row.bufferDays)),
     leadDays: Math.max(0, num(row.leadDays, 1)),
     status: status === 'hidden' || status === 'archived' ? status : 'active',
+    storeProductId: text(row.storeProductId) || undefined,
+    storeRentalOverride:
+      text(row.storeRentalOverride) === 'enabled' || text(row.storeRentalOverride) === 'disabled'
+        ? (text(row.storeRentalOverride) as 'enabled' | 'disabled')
+        : 'inherit',
   };
 }
 
@@ -40,6 +47,12 @@ export function asSettings(row: Row): Settings {
     countReturnDay: bool(row.countReturnDay),
     emailSenderName: text(row.emailSenderName, 'Rentals'),
     currency: text(row.currency, 'USD'),
+    storeCategoryId: text(row.storeCategoryId),
+    storeCategoryName: text(row.storeCategoryName),
+    storeCategoryVersion:
+      text(row.storeCategoryVersion) === 'V1_CATALOG' || text(row.storeCategoryVersion) === 'V3_CATALOG'
+        ? (text(row.storeCategoryVersion) as 'V1_CATALOG' | 'V3_CATALOG')
+        : undefined,
   };
 }
 
@@ -56,6 +69,9 @@ export const defaultSettings = (): Record<string, unknown> => ({
   countReturnDay: false,
   emailSenderName: 'Rentals',
   currency: 'USD',
+  storeCategoryId: '',
+  storeCategoryName: '',
+  storeCategoryVersion: undefined,
 });
 
 export async function loadSettings(access: Access): Promise<Settings> {
@@ -104,7 +120,13 @@ export async function blockedSet(itemId: string, access: Access): Promise<Set<st
   return dates;
 }
 
-export async function usageByDate(itemId: string, dates: string[], access: Access): Promise<Map<string, number>> {
+// Units claimed per date; `excludeBookingId` leaves out one booking's own claims (for date changes).
+export async function usageByDate(
+  itemId: string,
+  dates: string[],
+  access: Access,
+  excludeBookingId = '',
+): Promise<Map<string, number>> {
   const usage = new Map<string, number>();
   if (dates.length === 0) return usage;
   const first = dates[0];
@@ -116,6 +138,7 @@ export async function usageByDate(itemId: string, dates: string[], access: Acces
     .limit(1000)
     .find();
   for (const row of result.items) {
+    if (excludeBookingId && text(row.bookingId) === excludeBookingId) continue;
     const date = text(row.date);
     usage.set(date, (usage.get(date) ?? 0) + 1);
   }
@@ -138,6 +161,7 @@ export async function checkRange(
   quantity: number,
   perItemRules: boolean,
   access: Access,
+  excludeBookingId = '',
 ): Promise<Availability> {
   if (!isDateString(start) || !isDateString(end) || end < start) {
     return { ok: false, message: 'Choose a return date on or after pickup.', occupied: [], freeUnits: 0 };
@@ -167,7 +191,7 @@ export async function checkRange(
   if (closed.has(start) || closed.has(end)) {
     return { ok: false, message: 'Pickup and return cannot fall on a closed day.', occupied: rules.occupied, freeUnits: 0 };
   }
-  const usage = await usageByDate(item._id, rules.occupied, access);
+  const usage = await usageByDate(item._id, rules.occupied, access, excludeBookingId);
   let freeUnits = item.unitCount;
   for (const date of rules.occupied) {
     const free = item.unitCount - (usage.get(date) ?? 0);

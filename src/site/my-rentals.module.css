@@ -1,0 +1,285 @@
+/* My Rentals widget. Reads the same --rm-* tokens as the booking and catalog widgets. */
+
+.root {
+  --rm-radius-value: var(--rm-radius, 12px);
+  --rm-muted: color-mix(in srgb, var(--rm-text, #1a1a1a) 62%, transparent);
+  --rm-soft: color-mix(in srgb, var(--rm-accent, #116dff) 8%, var(--rm-card, #fff));
+  container: rm-my-rentals / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-sizing: border-box;
+  inline-size: 100%;
+  color: var(--rm-text, var(--wix-color-5, #1a1a1a));
+  font: var(--rm-body-font, var(--wix-font-Body-M, 400 16px/1.5 sans-serif));
+  text-decoration: var(--rm-body-decoration, none);
+}
+
+.root * {
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.heading {
+  margin: 0;
+  color: var(--rm-heading-color, inherit);
+  font: var(--rm-heading-font, var(--wix-font-Heading-S, 700 22px/1.25 sans-serif));
+  text-decoration: var(--rm-heading-decoration, none);
+}
+
+.lede,
+.muted {
+  margin: 0;
+  color: var(--rm-muted);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rm-muted);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: clamp(0.9rem, 3cqi, 1.4rem);
+  border: 1px solid var(--rm-border, var(--wix-color-3, #e3e3e3));
+  border-radius: calc(var(--rm-radius-value) + 4px);
+  background: var(--rm-card, var(--wix-color-1, #fff));
+}
+
+.cardTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.cardTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-inline-size: 0;
+}
+
+.itemName {
+  overflow-wrap: anywhere;
+  color: var(--rm-heading-color, inherit);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.reference {
+  font-size: 0.825rem;
+  color: var(--rm-muted);
+}
+
+.status {
+  flex-shrink: 0;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--rm-soft);
+  color: var(--rm-accent, #116dff);
+}
+
+.status[data-status='pending'] {
+  background: color-mix(in srgb, #d08a00 14%, transparent);
+  color: color-mix(in srgb, #b07400 85%, var(--rm-text, #1a1a1a));
+}
+
+.status[data-status='active'] {
+  background: color-mix(in srgb, #1f9d55 14%, transparent);
+  color: color-mix(in srgb, #1f9d55 80%, var(--rm-text, #1a1a1a));
+}
+
+.status[data-status='overdue'] {
+  background: color-mix(in srgb, #d6453d 14%, transparent);
+  color: color-mix(in srgb, #d6453d 85%, var(--rm-text, #1a1a1a));
+}
+
+.status[data-status='returned'],
+.status[data-status='cancelled'] {
+  background: color-mix(in srgb, var(--rm-text, #1a1a1a) 8%, transparent);
+  color: var(--rm-muted);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+
+.facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-inline-size: 0;
+}
+
+.facts dt {
+  font-size: 0.775rem;
+  color: var(--rm-muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.notice {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--rm-radius-value);
+  font-size: 0.925rem;
+}
+
+.notice[data-tone='info'] {
+  background: var(--rm-soft);
+}
+
+.notice[data-tone='error'] {
+  background: color-mix(in srgb, #d6453d 12%, transparent);
+  color: color-mix(in srgb, #d6453d 80%, var(--rm-text, #1a1a1a));
+}
+
+.notice[data-tone='success'] {
+  background: color-mix(in srgb, #1f9d55 12%, transparent);
+  color: color-mix(in srgb, #1f9d55 75%, var(--rm-text, #1a1a1a));
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.action,
+.secondary,
+.danger,
+.dangerSolid {
+  min-block-size: 2.6rem;
+  padding-inline: 1.15rem;
+  border-radius: var(--rm-radius-value);
+  font: var(--rm-button-font, var(--wix-font-Body-M, 600 15px/1.2 sans-serif));
+  text-decoration: var(--rm-button-decoration, none);
+  cursor: pointer;
+  transition: filter 0.15s ease, background-color 0.15s ease;
+}
+
+.action {
+  border: 0;
+  background: var(--rm-accent, var(--wix-color-8, #116dff));
+  color: var(--rm-on-accent, var(--wix-color-1, #fff));
+}
+
+.secondary {
+  border: 1px solid var(--rm-border, #d9d9d9);
+  background: transparent;
+  color: inherit;
+}
+
+.danger {
+  border: 1px solid color-mix(in srgb, #d6453d 45%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, #d6453d 85%, var(--rm-text, #1a1a1a));
+}
+
+.dangerSolid {
+  border: 0;
+  background: #d6453d;
+  color: #fff;
+}
+
+.action:hover:not(:disabled),
+.dangerSolid:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.secondary:hover:not(:disabled),
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--rm-text, #1a1a1a) 5%, transparent);
+}
+
+.action:disabled,
+.secondary:disabled,
+.danger:disabled,
+.dangerSolid:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.action:focus-visible,
+.secondary:focus-visible,
+.danger:focus-visible,
+.dangerSolid:focus-visible {
+  outline: 2px solid var(--rm-accent, #116dff);
+  outline-offset: 2px;
+}
+
+.confirm,
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border-radius: var(--rm-radius-value);
+  background: var(--rm-soft);
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.calendarCard {
+  padding: 0.6rem;
+  border: 1px solid var(--rm-border, #e3e3e3);
+  border-radius: var(--rm-radius-value);
+  background: var(--rm-card, #fff);
+}
+
+.newDates {
+  margin: 0;
+  font-weight: 600;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 0;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--rm-border, #d9d9d9);
+  border-radius: var(--rm-radius-value);
+  text-align: center;
+  color: var(--rm-muted);
+}
+
+.empty p {
+  margin: 0;
+}
+
+@container rm-my-rentals (max-width: 380px) {
+  .actions > * {
+    flex: 1 1 100%;
+  }
+}

@@ -1,6 +1,6 @@
 import { collections } from './constants';
 import { checkRange, loadItem, loadSettings } from './availability';
-import type { Booking, BookingStatus, Quote, Renter } from './models';
+import type { Booking, BookingStatus, DateChangeRequest, Quote, Renter } from './models';
 import { bool, num, text } from './models';
 import { readPlan } from './plans';
 import { claimUnitsForBooking } from './claim';
@@ -26,6 +26,19 @@ function asRenter(value: unknown): Renter {
   return { name: text(renter.name), email: text(renter.email), phone: text(renter.phone) };
 }
 
+function asChangeRequest(value: unknown): DateChangeRequest | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const request = value as Record<string, unknown>;
+  if (!text(request.startDate) || !text(request.endDate)) return undefined;
+  return {
+    startDate: text(request.startDate),
+    endDate: text(request.endDate),
+    quote: asQuote(request.quote),
+    requestedAt: text(request.requestedAt),
+    status: text(request.status) === 'declined' ? 'declined' : 'pending',
+  };
+}
+
 export function asBooking(row: Row): Booking {
   const status = text(row.status, 'hold') as BookingStatus;
   const outcome = row.depositOutcome;
@@ -43,6 +56,8 @@ export function asBooking(row: Row): Booking {
     cartLineItemId: text(row.cartLineItemId),
     ecomOrderId: text(row.ecomOrderId),
     renter: asRenter(row.renter),
+    memberId: text(row.memberId),
+    changeRequest: asChangeRequest(row.changeRequest),
     depositOutcome:
       outcome && typeof outcome === 'object'
         ? {
@@ -96,7 +111,7 @@ export interface HoldRequest {
   idempotencyKey: string;
 }
 
-export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>) {
+export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>, excludeBookingId = '') {
   await expireHolds();
   const plan = await readPlan(merchant);
   const settings = await loadSettings(merchant);
@@ -110,6 +125,7 @@ export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>) {
     input.quantity,
     plan.perItemRules,
     merchant,
+    excludeBookingId,
   );
   return { ...availability, currency: settings.currency, item };
 }
@@ -129,7 +145,10 @@ export async function holdRental(input: HoldRequest) {
     .ge('_createdDate', monthStart)
     .limit(1000)
     .find();
-  const billable = monthCount.items.filter((row) => !['expired', 'cancelled'].includes(text(row.status))).length;
+  // Sample bookings seeded on install are created this month too, but aren't real rentals.
+  const billable = monthCount.items.filter(
+    (row) => !['expired', 'cancelled'].includes(text(row.status)) && !text(row.idempotencyKey).startsWith('sample-'),
+  ).length;
   if (plan.maxBookingsPerMonth !== null && billable >= plan.maxBookingsPerMonth) {
     return { ok: false as const, message: 'This site has reached its monthly booking limit. Ask the merchant to upgrade.' };
   }

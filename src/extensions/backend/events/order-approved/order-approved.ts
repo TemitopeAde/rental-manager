@@ -9,7 +9,7 @@ interface LineItem {
 
 interface OrderShape {
   _id?: string;
-  buyerInfo?: { email?: string };
+  buyerInfo?: { email?: string; memberId?: string };
   billingInfo?: { contactDetails?: { firstName?: string; lastName?: string; phone?: string } };
   lineItems?: LineItem[];
 }
@@ -37,7 +37,7 @@ export default orders.onOrderApproved(async (event) => {
     const bookingId = line.catalogReference?.options?.bookingId;
     if (typeof bookingId !== 'string' || !bookingId) continue;
     try {
-      await confirmPaid(bookingId, order._id, text(line._id), renter);
+      await confirmPaid(bookingId, order._id, text(line._id), renter, text(order.buyerInfo?.memberId));
     } catch (error) {
       console.error('Failed to confirm rental booking', bookingId, error);
     }
