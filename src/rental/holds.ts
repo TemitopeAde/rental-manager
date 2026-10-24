@@ -1,4 +1,5 @@
-import { collections } from './constants';
+import { collections, hasMembersAreaApp } from './constants';
+import { getCurrentAppInstance } from './app-instance';
 import { checkRange, loadItem, loadSettings } from './availability';
 import type { Booking, BookingStatus, DateChangeRequest, Quote, Renter } from './models';
 import { bool, num, text } from './models';
@@ -156,8 +157,9 @@ export async function holdRental(input: HoldRequest) {
   const prior = existing.items[0];
   if (prior) return { ok: true as const, booking: asBooking(prior as Row), replayed: true };
 
-  const gate = await loadSettings(merchant);
-  if (!gate.membersAreaInstalled) {
+  const instance = await getCurrentAppInstance().catch(() => null);
+  const membersAreaInstalled = hasMembersAreaApp(instance?.site?.installedWixApps ?? []);
+  if (!membersAreaInstalled) {
     return { ok: false as const, message: "Online booking isn't open yet. The shop is still finishing its setup." };
   }
 

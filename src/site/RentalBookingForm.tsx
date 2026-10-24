@@ -29,9 +29,27 @@ export type BookingParts = {
   button?: HTMLAttributes<HTMLButtonElement>;
 };
 
+export type BookingNotification = {
+  tone: 'success' | 'error';
+  text: string;
+};
+
 const samples: CatalogItem[] = [
   { _id: 'sample', name: 'Sample rental', dailyRate: 20, weeklyRate: 100, depositAmount: 50, category: 'Equipment', minDays: 1, maxDays: 30, leadDays: 1 },
 ];
+
+function LoadingDots({ label }: { label: string }) {
+  return (
+    <div className={styles.progress} role="status" aria-label={label}>
+      <span>{label}</span>
+      <svg className={styles.loadingDots} viewBox="0 0 36 12" aria-hidden="true">
+        <circle className={styles.loadingDot} cx="6" cy="6" r="4" />
+        <circle className={styles.loadingDot} cx="18" cy="6" r="4" />
+        <circle className={styles.loadingDot} cx="30" cy="6" r="4" />
+      </svg>
+    </div>
+  );
+}
 
 export function RentalBookingForm({
   itemId = '',
@@ -44,6 +62,7 @@ export function RentalBookingForm({
   monthsShown = 1,
   embedded = false,
   parts,
+  onNotification,
 }: {
   itemId?: string;
   buttonLabel?: string;
@@ -56,6 +75,7 @@ export function RentalBookingForm({
   /** Inside the details widget, which already shows the item's name and rates. */
   embedded?: boolean;
   parts?: BookingParts;
+  onNotification?: (notification: BookingNotification) => void;
 }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [currency, setCurrency] = useState<string | undefined>();
@@ -63,9 +83,15 @@ export function RentalBookingForm({
   const [range, setRange] = useState<DateRange | undefined>();
   const [quantity, setQuantity] = useState(1);
   const [quote, setQuote] = useState<QuoteResult | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
+
+  function notify(notification: BookingNotification) {
+    onNotification?.(notification);
+    return notification;
+  }
 
   useEffect(() => {
     request<{ items: CatalogItem[]; currency?: string }>('/api/rentals/catalog')
@@ -98,19 +124,34 @@ export function RentalBookingForm({
   useEffect(() => {
     if (!selected || !startDate || !endDate || preview) {
       setQuote(null);
+      setQuoteLoading(false);
       return;
     }
+    let active = true;
+    setQuote(null);
+    setQuoteLoading(true);
     const timer = setTimeout(() => {
       post<QuoteResult>('/api/rentals/quote', { itemId: selected, startDate, endDate, quantity })
-        .then(setQuote)
-        .catch((error: Error) => setQuote({ ok: false, message: error.message }));
+        .then((body) => {
+          if (!active) return;
+          setQuote(body);
+          if (!body.ok) notify({ tone: 'error', text: body.message || 'Those dates are not available.' });
+        })
+        .catch((error: Error) => {
+          if (!active) return;
+          const text = error.message || 'Could not check availability.';
+          setQuote({ ok: false, message: text });
+          notify({ tone: 'error', text });
+        })
+        .finally(() => { if (active) setQuoteLoading(false); });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => { active = false; clearTimeout(timer); };
   }, [selected, startDate, endDate, quantity, preview]);
 
   async function rent() {
     if (preview) {
-      setMessage({ tone: 'error', text: 'This is a preview. Publish the site to take a booking.' });
+      const notification = notify({ tone: 'error', text: 'This is a preview. Publish the site to take a booking.' });
+      setMessage(notification);
       return;
     }
     setBusy(true);
@@ -124,7 +165,8 @@ export function RentalBookingForm({
         idempotencyKey: crypto.randomUUID(),
       });
       if (!held.ok || !held.booking) {
-        setMessage({ tone: 'error', text: held.message || 'Those dates are not available.' });
+        const notification = notify({ tone: 'error', text: held.message || 'Those dates are not available.' });
+        setMessage(notification);
         return;
       }
       await currentCartV2.addLineItemsToCurrentCart({
@@ -139,10 +181,13 @@ export function RentalBookingForm({
           },
         ],
       });
+      await currentCartV2.refreshCurrentCart();
       await post('/api/rentals/hold', { action: 'extend', bookingId: held.booking._id }).catch(() => undefined);
-      setMessage({ tone: 'success', text: `${held.booking.reference} is in your cart. Complete checkout within 30 minutes.` });
+      const notification = notify({ tone: 'success', text: `${held.booking.reference} is in your cart. Complete checkout within 30 minutes.` });
+      setMessage(notification);
     } catch (error) {
-      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not start checkout.' });
+      const notification = notify({ tone: 'error', text: error instanceof Error ? error.message : 'Could not start checkout.' });
+      setMessage(notification);
     } finally {
       setBusy(false);
     }
@@ -244,8 +289,10 @@ export function RentalBookingForm({
         </dl>
       ) : null}
 
-      {quote && !quote.ok ? <p className={styles.notice} data-tone="error" role="alert">{quote.message}</p> : null}
-      {message ? <p className={styles.notice} data-tone={message.tone} role="status">{message.text}</p> : null}
+      {quoteLoading ? <LoadingDots label="Checking availability" /> : null}
+      {quote && !quote.ok && !onNotification ? <p className={styles.notice} data-tone="error" role="alert">{quote.message}</p> : null}
+      {busy ? <LoadingDots label="Adding rental to cart" /> : null}
+      {message && !onNotification ? <p className={styles.notice} data-tone={message.tone} role="status">{message.text}</p> : null}
 
       <button {...parts?.button} className={partClass(styles.action, parts?.button)} type="submit" disabled={busy || !ready} aria-busy={busy}>
         <span className={styles.buttonContent}>

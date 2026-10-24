@@ -305,6 +305,16 @@
   color: var(--rm-muted);
 }
 
+.progress {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.45rem;
+  min-block-size: 1.5rem;
+  color: var(--rm-muted);
+  font-size: 0.9rem;
+}
+
 .loadingDot {
   fill: currentColor;
   opacity: 0.25;

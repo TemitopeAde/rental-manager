@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
+import { Toaster, toast } from 'sonner';
 import { request } from './client';
-import { RentalBookingForm } from './RentalBookingForm';
+import { RentalBookingForm, type BookingNotification } from './RentalBookingForm';
 import styles from './rental.module.css';
 import type { CatalogItem } from './types';
 
@@ -79,10 +80,19 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
     return () => { active = false; };
   }, [productId]);
 
-  if (message) return null;
+  useEffect(() => {
+    if (message) toast.error(message);
+  }, [message]);
+
+  const toaster = <Toaster position="top-center" closeButton richColors />;
+
+  if (message) {
+    return <div className={styles.pluginContainer}>{toaster}</div>;
+  }
   if (!item) {
     return (
       <div className={`${styles.pluginContainer} ${styles.notice} ${styles.loadingState}`} aria-live="polite" aria-label="Loading rental availability">
+        {toaster}
         <svg className={styles.loadingDots} viewBox="0 0 36 12" aria-hidden="true">
           <circle className={styles.loadingDot} cx="6" cy="6" r="4" />
           <circle className={styles.loadingDot} cx="18" cy="6" r="4" />
@@ -97,7 +107,15 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
       className={styles.pluginContainer}
       style={appearanceStyle(appearance ?? {})}
     >
-      <RentalBookingForm itemId={item._id} embedded />
+      {toaster}
+      <RentalBookingForm
+        itemId={item._id}
+        embedded
+        onNotification={({ tone, text }: BookingNotification) => {
+          if (tone === 'error') toast.error(text);
+          else toast.success(text);
+        }}
+      />
     </div>
   );
 }
