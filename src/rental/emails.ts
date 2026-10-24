@@ -51,7 +51,6 @@ async function ownerEmail(): Promise<string> {
     const response = await auth.elevate(appInstances.getAppInstance)();
     return response.site?.ownerInfo?.email ?? '';
   } catch (error) {
-    console.error('Could not read the site owner email', error);
     return '';
   }
 }
@@ -73,7 +72,6 @@ async function send(to: { email: string; name?: string }, subject: string, html:
       { idempotencyKey: key },
     );
   } catch (error) {
-    console.error('Email failed', subject, error);
   }
 }
 

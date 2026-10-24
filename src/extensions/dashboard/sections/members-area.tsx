@@ -3,7 +3,7 @@ import { Users } from 'lucide-react';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { api, post } from '@/dashboard/client';
-import { hasMembersAreaApp, MEMBERS_AREA_APP_KEYS } from '@/rental/constants';
+import { hasMembersAreaApp } from '@/rental/constants';
 import { useToast } from './toast';
 
 // Online bookings stay closed until the site has Wix Members Area, which My Rentals and
@@ -17,11 +17,6 @@ export function MembersAreaNotice() {
     api<{ installedWixApps: string[] }>('/api/rentals/app-instance')
       .then((body) => {
         const isInstalled = hasMembersAreaApp(body.installedWixApps);
-        console.info('[members-area] dashboard installation check', {
-          expectedAppKeys: MEMBERS_AREA_APP_KEYS,
-          installedWixApps: body.installedWixApps,
-          isInstalled,
-        });
         setInstalled(isInstalled);
       })
       .catch(() => setInstalled(null));

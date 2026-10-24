@@ -39,7 +39,6 @@ export default orders.onOrderApproved(async (event) => {
     try {
       await confirmPaid(bookingId, order._id, text(line._id), renter, text(order.buyerInfo?.memberId));
     } catch (error) {
-      console.error('Failed to confirm rental booking', bookingId, error);
     }
   }
 });

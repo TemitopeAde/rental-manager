@@ -68,7 +68,6 @@ export async function detectCatalog(): Promise<{ version: CatalogState; error?: 
     versionError = `Unexpected catalog version "${version}".`;
   } catch (error) {
     versionError = message(error);
-    console.error('Could not read the Wix Stores catalog version; probing the catalogs instead', error);
   }
 
   // Without the versioning scope, the product APIs still tell us which catalog answers.
@@ -82,7 +81,6 @@ export async function detectCatalog(): Promise<{ version: CatalogState; error?: 
     await auth.elevate(products.queryProducts)().limit(1).find();
     return { version: 'V1_CATALOG' };
   } catch (error) {
-    console.error('Could not read Wix Stores products from either catalog', error);
   }
   return {
     version: 'STORES_NOT_INSTALLED',
@@ -129,7 +127,6 @@ export async function listStoreCategories(): Promise<{ version: CatalogState; ca
       }),
     };
   } catch (error) {
-    console.error('Could not list Wix Store categories', error);
     return { version, categories: [] };
   }
 }
@@ -170,7 +167,6 @@ export async function getStoreProduct(productId: string): Promise<StoreProduct |
       categoryIds,
     };
   } catch (error) {
-    console.error('Could not load Wix Store product', productId, error);
     return null;
   }
 }
@@ -228,7 +224,6 @@ export async function searchStoreProducts(term: string, limit = 20): Promise<{ v
     const result = await query.limit(limit).find();
     return { version, products: toOptions(result.items) };
   } catch (error) {
-    console.error('Could not search Wix Store products', error);
     return { version, products: [], error: `Couldn't search products: ${message(error)}` };
   }
 }

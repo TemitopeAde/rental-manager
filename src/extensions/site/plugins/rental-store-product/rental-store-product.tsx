@@ -60,16 +60,6 @@ class RentalStoreProductElement extends HTMLElement {
       bodyFont: this.readSetting('body-font', 'bodyFont'),
       buttonFont: this.readSetting('button-font', 'buttonFont'),
     };
-    console.info('[rental-store-product] appearance settings received', {
-      productId,
-      headingFont: { value: appearance.headingFont, type: typeof appearance.headingFont },
-      bodyFont: { value: appearance.bodyFont, type: typeof appearance.bodyFont },
-      buttonFont: { value: appearance.buttonFont, type: typeof appearance.buttonFont },
-      attributes: appearanceAttributes.reduce<Record<string, string | null>>((result, attribute) => {
-        result[attribute] = this.getAttribute(attribute);
-        return result;
-      }, {}),
-    });
     this.root.render(React.createElement(StoreRentalEmbed, {
       productId,
       appearance,

@@ -11,17 +11,14 @@ function parseFont(raw: string | undefined, fallback: FontValue): FontValue {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && 'font' in parsed && typeof parsed.font === 'string') {
-      console.info('[rental-store-product] font parsed from JSON', { raw, parsed });
       return {
         font: parsed.font,
         textDecoration: 'textDecoration' in parsed && typeof parsed.textDecoration === 'string' ? parsed.textDecoration : '',
       };
     }
   } catch {
-    console.info('[rental-store-product] font received as CSS string', { raw, type: typeof raw });
     return { font: raw, textDecoration: '' };
   }
-  console.warn('[rental-store-product] font value was not a supported string format', { raw, type: typeof raw });
   return fallback;
 }
 
@@ -65,13 +62,6 @@ export interface StoreRentalAppearance {
 export function StoreRentalEmbed({ productId, appearance }: { productId: string; appearance?: StoreRentalAppearance }) {
   const [item, setItem] = useState<CatalogItem | null>(null);
   const [message, setMessage] = useState('');
-
-  console.info('[rental-store-product] rendering appearance', {
-    productId,
-    headingFont: { value: appearance?.headingFont, type: typeof appearance?.headingFont },
-    bodyFont: { value: appearance?.bodyFont, type: typeof appearance?.bodyFont },
-    buttonFont: { value: appearance?.buttonFont, type: typeof appearance?.buttonFont },
-  });
 
   useEffect(() => {
     let active = true;

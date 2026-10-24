@@ -1,6 +1,6 @@
 import { appsInstaller } from '@wix/apps-installer';
 import { getCurrentAppInstance } from './app-instance';
-import { hasMembersAreaApp, MEMBERS_AREA_APP_ID, MEMBERS_AREA_APP_KEYS } from './constants';
+import { hasMembersAreaApp, MEMBERS_AREA_APP_ID } from './constants';
 import { saveSettings } from './merchant';
 
 // Both installer calls need a logged-in Wix user, so these only run from dashboard requests.
@@ -9,12 +9,6 @@ export async function checkMembersArea(): Promise<boolean> {
   const { site } = await getCurrentAppInstance();
   const installedWixApps = site?.installedWixApps ?? [];
   const found = hasMembersAreaApp(installedWixApps);
-  console.info('[members-area] installation check', {
-    siteId: site?.siteId ?? null,
-    expectedAppKeys: MEMBERS_AREA_APP_KEYS,
-    installedWixApps,
-    found,
-  });
   await saveSettings({ membersAreaInstalled: found });
   return found;
 }

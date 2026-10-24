@@ -118,7 +118,7 @@ export function usePanelProps<K extends string>(defaults: Record<K, string>) {
           return next;
         });
       })
-      .catch((error) => console.error('Failed to load widget settings', error));
+      .catch(() => undefined);
     // The defaults object is a constant per panel; load once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

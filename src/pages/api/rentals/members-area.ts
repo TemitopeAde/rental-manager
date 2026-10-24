@@ -9,7 +9,6 @@ export const GET: APIRoute = async () => {
   try {
     return json({ installed: await checkMembersArea() });
   } catch (error) {
-    console.error('Members Area check failed', error);
     return json({ ok: false, message: 'Could not check for Wix Members Area.' }, 500);
   }
 };
@@ -21,7 +20,6 @@ export const POST: APIRoute = async () => {
     const result = await installMembersArea();
     return json(result, result.ok ? 200 : 400);
   } catch (error) {
-    console.error('Members Area install failed', error);
     return json({ ok: false, message: 'Could not install Wix Members Area. Add it from the Wix App Market instead.' }, 500);
   }
 };

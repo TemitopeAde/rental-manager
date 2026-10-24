@@ -66,7 +66,6 @@ export async function readPlan(access: Access): Promise<PlanLimits> {
     if (name.includes('starter')) return LIMITS.starter;
     return LIMITS.free;
   } catch (error) {
-    console.error('Unable to read the app plan; using the free tier.', error);
     return LIMITS.free;
   }
 }

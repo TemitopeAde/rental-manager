@@ -22,7 +22,6 @@ export async function currentMember(): Promise<SiteMember | null> {
     if (!member?._id) return null;
     return { memberId: member._id, email: (member.loginEmail ?? '').trim().toLowerCase() };
   } catch (error) {
-    console.error('currentMember failed', error);
     return null;
   }
 }

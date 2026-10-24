@@ -136,32 +136,7 @@ export async function resolveStoreRentalItem(productId: string) {
     getCatalogState(),
     getStoreProduct(productId),
   ]);
-  console.info('[store-rental] product loaded', {
-    productId,
-    catalogVersion: version,
-    product: product
-      ? {
-          id: product.id,
-          name: product.name,
-          physical: product.physical,
-          visible: product.visible,
-          dailyRate: product.dailyRate,
-          categoryIds: product.categoryIds,
-        }
-      : null,
-    settings: {
-      storeCategoryId: settings.storeCategoryId,
-      storeCategoryVersion: settings.storeCategoryVersion,
-    },
-  });
   if (!product || !product.physical || !product.visible || product.dailyRate <= 0) {
-    console.warn('[store-rental] product failed base eligibility', {
-      productId,
-      missingProduct: !product,
-      physical: product?.physical ?? false,
-      visible: product?.visible ?? false,
-      dailyRate: product?.dailyRate ?? 0,
-    });
     return null;
   }
 
@@ -171,19 +146,7 @@ export async function resolveStoreRentalItem(productId: string) {
   const explicit = override === 'enabled' || override === 'disabled' ? override : 'inherit';
   const inCategory = settings.storeCategoryVersion === version && productMatchesCategory(product, settings.storeCategoryId);
   const enabled = explicit === 'enabled' || (explicit === 'inherit' && inCategory);
-  console.info('[store-rental] rental configuration evaluated', {
-    productId,
-    linkedItemId: existing?._id ?? null,
-    linkedStoreProductId: existing ? text(existing.storeProductId) : null,
-    override,
-    explicit,
-    inCategory,
-    enabled,
-  });
-  if (!enabled) {
-    console.warn('[store-rental] product rejected by category/override rules', { productId, explicit, inCategory });
-    return null;
-  }
+  if (!enabled) return null;
 
   const base = existing ?? {
     _id: '',

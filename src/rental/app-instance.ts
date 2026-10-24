@@ -10,8 +10,7 @@ export async function siteCurrency(): Promise<string> {
   try {
     const { site } = await getCurrentAppInstance();
     return site?.paymentCurrency ?? '';
-  } catch (error) {
-    console.error('Could not read the site currency', error);
+  } catch {
     return '';
   }
 }

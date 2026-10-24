@@ -120,7 +120,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    reload().catch((error) => console.error('Could not load dashboard data', error));
+    reload().catch(() => undefined);
   }, [reload]);
 
   const currency = settings?.currency;
