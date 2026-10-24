@@ -9,7 +9,7 @@
   box-sizing: border-box;
   inline-size: 100%;
   color: var(--rm-text, var(--wix-color-5, #1a1a1a));
-  font: var(--rm-body-font, var(--wix-font-Body-M, 400 16px/1.5 sans-serif));
+  font: var(--rm-body-font, 400 16px/1.5 "helvetica-w01-roman", sans-serif);
   text-decoration: var(--rm-body-decoration, none);
 }
 
@@ -286,16 +286,59 @@
   color: color-mix(in srgb, #1f9d55 75%, var(--rm-text, #1a1a1a));
 }
 
+.loadingDots {
+  display: inline-block;
+  inline-size: 2.25rem;
+  block-size: 0.75rem;
+}
+
+.pluginContainer {
+  inline-size: 100%;
+  margin: 0;
+  margin-inline-start: 0;
+}
+
+.loadingState {
+  display: flex;
+  justify-content: flex-start;
+  min-block-size: 2rem;
+  color: var(--rm-muted);
+}
+
+.loadingDot {
+  fill: currentColor;
+  opacity: 0.25;
+  animation: rm-loading-dot 1.2s ease-in-out infinite;
+}
+
+.loadingDot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.loadingDot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes rm-loading-dot {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
 .action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
   min-block-size: 3.1rem;
   padding-inline: 1.5rem;
   border: 0;
   border-radius: var(--rm-radius-value);
-  background: var(--rm-accent, var(--wix-color-8, #116dff));
-  color: var(--rm-on-accent, var(--wix-color-1, #fff));
+  background: var(--rm-accent, #116dff);
+  color: var(--rm-on-accent, #fff);
   font: var(--rm-button-font, var(--wix-font-Body-M, 600 16px/1.2 sans-serif));
   text-decoration: var(--rm-button-decoration, none);
   cursor: pointer;
+  appearance: none;
   transition: filter 0.15s ease, transform 0.1s ease;
 }
 
@@ -323,7 +366,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
+  .spinner,
+  .loadingDot {
     animation: none;
   }
 }

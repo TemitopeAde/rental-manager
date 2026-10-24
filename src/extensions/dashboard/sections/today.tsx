@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CalendarClock, Hourgla
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/dashboard/client';
-import { BookingSheet, useBookingActions } from './bookings';
+import { BookingActionButton, BookingSheet, useBookingActions } from './bookings';
 import {
   ErrorState,
   formatDay,
@@ -59,9 +59,13 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
           </span>
         </button>
         {next ? (
-          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void act(booking.reference, next.action)}>
-            {busy === `${booking.reference}:${next.action}` ? 'Saving…' : next.label}
-          </Button>
+          next.action === 'approve' ? (
+            <BookingActionButton reference={booking.reference} action={next.action} label={next.label} title="Approve this booking?" description="This confirms the booking and lets the renter know it is approved." act={act} busy={busy} variant="outline" size="sm" />
+          ) : (
+            <Button size="sm" variant="outline" loading={busy === `${booking.reference}:${next.action}`} disabled={busy !== null} onClick={() => void act(booking.reference, next.action)}>
+              {next.label}
+            </Button>
+          )
         ) : <StatusBadge status={booking.status} />}
       </li>
     );

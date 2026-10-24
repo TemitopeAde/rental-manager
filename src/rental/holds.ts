@@ -95,13 +95,30 @@ export async function expireHolds(): Promise<number> {
   return expired;
 }
 
-export async function releaseUnits(bookingId: string): Promise<void> {
-  const result = await queryRows(collections.unitDays, merchant).eq('bookingId', bookingId).limit(1000).find();
+// `fromDate` keeps the claims before that date, so an early return frees only the days still ahead.
+export async function releaseUnits(bookingId: string, fromDate = ''): Promise<void> {
+  let query = queryRows(collections.unitDays, merchant).eq('bookingId', bookingId);
+  if (fromDate) query = query.ge('date', fromDate);
+  const result = await query.limit(1000).find();
   await removeRows(
     collections.unitDays,
     result.items.map((row) => row._id).filter((id): id is string => typeof id === 'string'),
     merchant,
   );
+}
+
+// The distinct dates a booking holds units on, read before releasing them so they can be put back.
+export async function claimedDates(bookingId: string): Promise<string[]> {
+  const result = await queryRows(collections.unitDays, merchant).eq('bookingId', bookingId).limit(1000).find();
+  return [...new Set(result.items.map((row) => text(row.date)).filter(Boolean))].sort();
+}
+
+// No 0/O or 1/I, so a reference read over the phone comes out right. 32^8 values make a repeat negligible.
+const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+export function newReference(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return `RB-${Array.from(bytes, (byte) => REFERENCE_ALPHABET[byte % REFERENCE_ALPHABET.length]).join('')}`;
 }
 
 export interface HoldRequest {
@@ -147,6 +164,7 @@ export async function holdRental(input: HoldRequest) {
   const plan = await readPlan(merchant);
   const monthStart = new Date();
   monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
   const monthCount = await queryRows(collections.bookings, merchant)
     .ge('_createdDate', monthStart)
     .limit(1000)
@@ -162,7 +180,7 @@ export async function holdRental(input: HoldRequest) {
   const quoted = await quoteRental(input);
   if (!quoted.ok || !quoted.quote || !quoted.item) return { ok: false as const, message: quoted.message };
 
-  const reference = `RB-${Math.floor(10000 + Math.random() * 89999)}`;
+  const reference = newReference();
   const holdExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const created = await insertRow(
     collections.bookings,

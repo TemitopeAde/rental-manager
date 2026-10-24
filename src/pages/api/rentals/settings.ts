@@ -29,7 +29,6 @@ export const POST: APIRoute = async ({ request }) => {
     defaultLeadDays: body.defaultLeadDays === undefined ? undefined : int(body.defaultLeadDays, 1),
     countReturnDay: typeof body.countReturnDay === 'boolean' ? body.countReturnDay : undefined,
     emailSenderName: str(body.emailSenderName) || undefined,
-    currency: str(body.currency) || undefined,
     storeCategoryId: str(body.storeCategoryId),
     storeCategoryName: str(body.storeCategoryName),
     storeCategoryVersion:

@@ -377,11 +377,12 @@ export function TextField({ id, label, hint, tip, error, className, ...props }: 
 }
 
 // A destructive button that asks for a second click before acting.
-export function ConfirmButton({ label, confirmLabel, onConfirm, disabled }: {
+export function ConfirmButton({ label, confirmLabel, onConfirm, disabled, loading }: {
   label: string;
   confirmLabel: string;
   onConfirm: () => void;
   disabled?: boolean;
+  loading?: boolean;
 }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -392,6 +393,7 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, disabled }: {
   return (
     <Button
       variant="destructive"
+      loading={loading}
       disabled={disabled}
       onClick={() => {
         if (armed) {

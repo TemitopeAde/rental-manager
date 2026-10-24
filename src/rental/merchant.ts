@@ -1,7 +1,7 @@
 import { collections, ALL_ITEMS } from './constants';
 import { asItem, loadItem, loadSettings } from './availability';
 import { listBookings } from './actions';
-import { asBooking } from './holds';
+import { asBooking, newReference } from './holds';
 import { claimUnitsForBooking } from './claim';
 import { checkRange } from './availability';
 import { minutesNow, parseHour, todayInTimezone } from './dates';
@@ -112,7 +112,6 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.countReturnDay !== undefined) next.countReturnDay = patch.countReturnDay;
   if (patch.emailSenderName) next.emailSenderName = patch.emailSenderName;
   if (patch.membersAreaInstalled !== undefined) next.membersAreaInstalled = patch.membersAreaInstalled;
-  if (patch.currency) next.currency = patch.currency;
   if (patch.storeCategoryId !== undefined) next.storeCategoryId = patch.storeCategoryId;
   if (patch.storeCategoryName !== undefined) next.storeCategoryName = patch.storeCategoryName;
   if ('storeCategoryVersion' in patch) next.storeCategoryVersion = patch.storeCategoryVersion;
@@ -137,7 +136,34 @@ export async function resolveStoreRentalItem(productId: string) {
     getCatalogState(),
     getStoreProduct(productId),
   ]);
-  if (!product || !product.physical || !product.visible || product.dailyRate <= 0) return null;
+  console.info('[store-rental] product loaded', {
+    productId,
+    catalogVersion: version,
+    product: product
+      ? {
+          id: product.id,
+          name: product.name,
+          physical: product.physical,
+          visible: product.visible,
+          dailyRate: product.dailyRate,
+          categoryIds: product.categoryIds,
+        }
+      : null,
+    settings: {
+      storeCategoryId: settings.storeCategoryId,
+      storeCategoryVersion: settings.storeCategoryVersion,
+    },
+  });
+  if (!product || !product.physical || !product.visible || product.dailyRate <= 0) {
+    console.warn('[store-rental] product failed base eligibility', {
+      productId,
+      missingProduct: !product,
+      physical: product?.physical ?? false,
+      visible: product?.visible ?? false,
+      dailyRate: product?.dailyRate ?? 0,
+    });
+    return null;
+  }
 
   const found = await queryRows(collections.items, merchant).eq('storeProductId', productId).limit(1).find();
   const existing = found.items[0] as Row | undefined;
@@ -145,7 +171,19 @@ export async function resolveStoreRentalItem(productId: string) {
   const explicit = override === 'enabled' || override === 'disabled' ? override : 'inherit';
   const inCategory = settings.storeCategoryVersion === version && productMatchesCategory(product, settings.storeCategoryId);
   const enabled = explicit === 'enabled' || (explicit === 'inherit' && inCategory);
-  if (!enabled) return null;
+  console.info('[store-rental] rental configuration evaluated', {
+    productId,
+    linkedItemId: existing?._id ?? null,
+    linkedStoreProductId: existing ? text(existing.storeProductId) : null,
+    override,
+    explicit,
+    inCategory,
+    enabled,
+  });
+  if (!enabled) {
+    console.warn('[store-rental] product rejected by category/override rules', { productId, explicit, inCategory });
+    return null;
+  }
 
   const base = existing ?? {
     _id: '',
@@ -180,7 +218,7 @@ export async function resolveStoreRentalItem(productId: string) {
 }
 
 function loadSettingsFrom(row: Row) {
-  return import('./availability').then(({ asSettings }) => asSettings(row));
+  return import('./availability').then(({ asSettings, withSiteCurrency }) => withSiteCurrency(asSettings(row)));
 }
 
 export async function blockDates(itemId: string | undefined, dates: string[], reason: string) {
@@ -243,7 +281,7 @@ export async function createManualBooking(input: {
   if (!item) return { ok: false as const, message: 'Item not found.' };
   const availability = await checkRange(item, settings, input.startDate, input.endDate, input.quantity, plan.perItemRules, merchant);
   if (!availability.ok || !availability.quote) return { ok: false as const, message: availability.message };
-  const reference = `RB-${Math.floor(10000 + Math.random() * 89999)}`;
+  const reference = newReference();
   const created = await insertRow(
     collections.bookings,
     {

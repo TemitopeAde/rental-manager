@@ -30,7 +30,7 @@ export const headingFont: FontValue = {
 };
 
 export const bodyFont: FontValue = {
-  font: '400 16px/1.5 sans-serif',
+  font: '400 16px/1.5 "helvetica-w01-roman", sans-serif',
   textDecoration: '',
 };
 
@@ -53,6 +53,18 @@ export function parseFont(raw: string | undefined, fallback: FontValue): FontVal
     return { font: raw, textDecoration: '' };
   }
   return fallback;
+}
+
+// Wix returns the selected typeface as part of a CSS font shorthand value,
+// for example: `400 16px/1.5 "Wix Madefor Text"`. Keep the preview styled
+// with the complete value, but expose the family name in the panel as well.
+export function fontFamilyName(font: string): string {
+  const sizeIndex = font.search(/(?:^|\s)(?:\d*\.\d+|\d+)(?:px|pt|pc|in|cm|mm|em|rem|ex|ch|vw|vh|vmin|vmax)(?:\/[^\s]+)?\s*/i);
+  if (sizeIndex === -1) return font.trim() || 'Default font';
+
+  const match = font.slice(sizeIndex).match(/(?:px|pt|pc|in|cm|mm|em|rem|ex|ch|vw|vh|vmin|vmax)(?:\/[^\s]+)?\s*(.*)$/i);
+  const family = match?.[1]?.trim();
+  return family ? family.replace(/^['"]|['"]$/g, '') : 'Default font';
 }
 
 export function appearanceStyle(values: {
@@ -260,7 +272,8 @@ const FontField: FC<{ label: string; value: FontValue; onChange: (value: FontVal
           }),
         })}
       >
-        Aa · Change font
+        <span aria-hidden="true">Aa</span>
+        <span> · {fontFamilyName(value.font)}</span>
       </Button>
     </FormField>
   </SidePanel.Field>

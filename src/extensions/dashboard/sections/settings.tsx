@@ -10,8 +10,6 @@ import { post } from '@/dashboard/client';
 import { LoadingState, numberField, SectionHeader, TextField, useDashboard, type Settings } from './shared';
 import { useToast } from './toast';
 
-const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'CHF', 'JPY', 'ILS', 'INR', 'NGN', 'ZAR', 'BRL', 'MXN', 'SEK', 'NOK', 'DKK', 'PLN'];
-
 function timezones(current: string): string[] {
   const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') ?? [];
   return supported.includes(current) ? supported : [current, ...supported];
@@ -107,14 +105,8 @@ export function SettingsSection() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label>Currency</Label>
-                <Select value={draft.currency} onValueChange={(value) => set('currency', value)}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {(currencies.includes(draft.currency) ? currencies : [draft.currency, ...currencies]).map((code) => (
-                      <SelectItem key={code} value={code}>{code}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <p className="flex h-9 items-center text-sm font-medium">{draft.currency}</p>
+                <p className="text-xs text-muted-foreground">Your site's currency, which checkout charges in. Change it in your site's General Info.</p>
               </div>
             </CardContent>
           </Card>
@@ -220,7 +212,7 @@ export function SettingsSection() {
             <span className="text-sm text-muted-foreground">You have unsaved changes.</span>
             <div className="flex gap-2">
               <Button variant="outline" disabled={saving} onClick={() => setDraft(saved)}>Discard</Button>
-              <Button disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save changes'}</Button>
+              <Button loading={saving} disabled={saving} onClick={() => void save()}>Save changes</Button>
             </div>
           </div>
         </div>

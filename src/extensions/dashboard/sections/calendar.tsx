@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { DayPicker, type DayButtonProps } from 'react-day-picker';
 import { CalendarRange, Lock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,20 +35,29 @@ function onDay(rows: BookingRow[], iso: string) {
 
 // MonthDay is passed to DayPicker as a component, so it must keep a stable identity;
 // the bookings it draws come through context instead of a closure.
-const MonthData = createContext<{ rows: BookingRow[]; itemName: (id: string) => string }>({ rows: [], itemName: () => '' });
+const MonthData = createContext<{
+  rows: BookingRow[];
+  itemName: (id: string) => string;
+  onBookingClick: (id: string) => void;
+}>({ rows: [], itemName: () => '', onBookingClick: () => undefined });
 
 function MonthDay({ day: calendarDay, modifiers, className, ...button }: DayButtonProps) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (modifiers.focused) ref.current?.focus();
   }, [modifiers.focused]);
-  const { rows, itemName } = useContext(MonthData);
+  const { rows, itemName, onBookingClick } = useContext(MonthData);
   const iso = isoDay(calendarDay.date);
   const bookings = onDay(rows, iso);
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    button.onClick?.(event);
+    if (bookings.length === 1) onBookingClick(bookings[0]._id);
+  };
   return (
     <button
       ref={ref}
       {...button}
+      onClick={handleClick}
       className={cn(
         'flex h-full min-h-20 w-full flex-col items-stretch gap-1 rounded-lg border border-transparent p-1.5 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-24',
         modifiers.outside && 'opacity-40',
@@ -121,7 +130,7 @@ export function CalendarSection() {
   );
 
   return (
-    <MonthData.Provider value={{ rows, itemName }}>
+    <MonthData.Provider value={{ rows, itemName, onBookingClick: setOpenId }}>
     <div className="flex flex-col gap-4">
       <SectionHeader title="Calendar" description="Every rental on one month. Pick a day to see who's coming and going." />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">

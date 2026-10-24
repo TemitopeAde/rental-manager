@@ -1,7 +1,8 @@
 import { collections } from './constants';
 import { loadItem, loadSettings } from './availability';
-import { asBooking, catalogAvailable, expireHolds, releaseUnits } from './holds';
+import { asBooking, catalogAvailable, claimedDates, expireHolds, releaseUnits } from './holds';
 import { checkRange } from './availability';
+import { addDays, todayInTimezone } from './dates';
 import type { Booking, BookingStatus } from './models';
 import { text } from './models';
 import { readPlan } from './plans';
@@ -78,6 +79,16 @@ async function reclaim(booking: Booking): Promise<boolean> {
   return claimUnitsForBooking(booking.itemId, booking._id, booking.quantity, availability.occupied, item.unitCount);
 }
 
+// Once an item is back, its remaining days are free again. The buffer still applies, counted from
+// today rather than the booked return date, so an early return keeps its turnaround time.
+async function releaseAfterReturn(booking: Booking) {
+  const plan = await readPlan(merchant);
+  const settings = await loadSettings(merchant);
+  const item = await loadItem(booking.itemId, merchant);
+  const bufferDays = plan.perItemRules && item ? item.bufferDays : settings.defaultBufferDays;
+  await releaseUnits(booking._id, addDays(todayInTimezone(settings.timezone), bufferDays));
+}
+
 const transitions: Record<string, BookingStatus[]> = {
   approve: ['pending'],
   decline: ['pending'],
@@ -110,6 +121,7 @@ export async function transition(
     return { ok: true as const, booking: asBooking(updated), refundOrderId: booking.ecomOrderId };
   }
   const next: BookingStatus = action === 'approve' ? 'confirmed' : action === 'pickup' ? 'active' : 'returned';
+  if (next === 'returned') await releaseAfterReturn(booking);
   const updated = await saveStatus(row, next);
   await audit(action, `${booking.reference} marked ${next}.`, booking._id, source);
   return { ok: true as const, booking: asBooking(updated), refundOrderId: '' };
@@ -171,10 +183,20 @@ export async function resolveChangeRequest(referenceOrId: string, decision: 'app
     booking._id,
   );
   if (!availability.ok || !availability.quote) return { ok: false as const, message: availability.message };
+  // Put back exactly the days the booking held. Re-running checkRange here would refuse a pickup inside
+  // the lead window and leave a confirmed booking holding no units.
+  const previousDates = await claimedDates(booking._id);
   await releaseUnits(booking._id);
   const claimed = await claimUnitsForBooking(booking.itemId, booking._id, booking.quantity, availability.occupied, item.unitCount);
   if (!claimed) {
-    await reclaim(booking);
+    const restored = await claimUnitsForBooking(booking.itemId, booking._id, booking.quantity, previousDates, item.unitCount);
+    if (!restored) {
+      await audit('units-lost', `Could not restore ${booking.startDate} – ${booking.endDate} after a failed date change.`, booking._id, source);
+      return {
+        ok: false as const,
+        message: `Those dates are no longer free, and ${booking.reference} lost its original dates to another booking. Check the calendar.`,
+      };
+    }
     return { ok: false as const, message: 'Those dates are no longer free.' };
   }
   const updated = asBooking(await updateRow(
@@ -212,6 +234,7 @@ export async function settleDeposit(referenceOrId: string, amountKept: number, n
   const row = await getRow(collections.bookings, booking._id, merchant);
   if (!row) return { ok: false as const, message: 'Booking not found.' };
   const outcome = amountKept > 0 ? 'kept' : 'released';
+  await releaseAfterReturn(booking);
   const updated = await updateRow(
     collections.bookings,
     {

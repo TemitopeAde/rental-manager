@@ -11,7 +11,7 @@
   box-sizing: border-box;
   inline-size: 100%;
   color: var(--rm-text, var(--wix-color-5, #1a1a1a));
-  font: var(--rm-body-font, var(--wix-font-Body-M, 400 16px/1.5 sans-serif));
+  font: var(--rm-body-font, 400 16px/1.5 "helvetica-w01-roman", sans-serif);
   text-decoration: var(--rm-body-decoration, none);
 }
 

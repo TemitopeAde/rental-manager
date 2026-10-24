@@ -252,8 +252,8 @@ function ItemSheet({ item, perItemRules, currency, money, defaults, onClose, onS
         </div>
 
         <SheetFooter>
-          <Button disabled={saving || !draft.name || draft.dailyRate <= 0 || weeklyTooLow || rangeInvalid} onClick={() => void save()}>
-            {saving ? 'Saving…' : isNew ? 'Add item' : 'Save changes'}
+          <Button loading={saving} disabled={saving || !draft.name || draft.dailyRate <= 0 || weeklyTooLow || rangeInvalid} onClick={() => void save()}>
+            {isNew ? 'Add item' : 'Save changes'}
           </Button>
         </SheetFooter>
       </SheetContent>

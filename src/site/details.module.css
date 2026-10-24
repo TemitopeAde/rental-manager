@@ -10,7 +10,7 @@
   padding: clamp(1rem, 3vw, 1.5rem);
   background: var(--rm-background, transparent);
   color: var(--rm-text, var(--wix-color-5, #1a1a1a));
-  font: var(--rm-body-font, var(--wix-font-Body-M, 400 16px/1.5 sans-serif));
+  font: var(--rm-body-font, 400 16px/1.5 "helvetica-w01-roman", sans-serif);
   text-decoration: var(--rm-body-decoration, none);
 }
 
