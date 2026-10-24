@@ -7,7 +7,7 @@ import { checkRange } from './availability';
 import { minutesNow, parseHour, todayInTimezone } from './dates';
 import type { RentalItem, Settings } from './models';
 import { text } from './models';
-import { readPlan } from './plans';
+import { canBookItem, liveItemCount, readPlan } from './plans';
 import { defaultSettings } from './availability';
 import { insertRow, queryRows, removeRow, updateRow, getRow, type Row } from './store';
 import { getCatalogState, getStoreProduct, listStoreCategories, productMatchesCategory } from './stores';
@@ -23,9 +23,12 @@ export async function listItems(category?: string, status?: string) {
 }
 
 // Category tabs come from every active item, not the filtered page, so they stay put while filtering.
-export async function listCategories() {
-  const result = await queryRows(collections.items, merchant).eq('status', 'active').distinct('category');
-  return (result.items as unknown[])
+// `allowed` limits the tabs to items that can take bookings, so a downgraded site shows no empty tabs.
+export async function listCategories(allowed?: Set<string> | null) {
+  const values = allowed
+    ? (await listItems(undefined, 'active')).filter((item) => allowed.has(item._id)).map((item) => item.category)
+    : ((await queryRows(collections.items, merchant).eq('status', 'active').distinct('category')).items as unknown[]);
+  return [...new Set(values)]
     .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
     .sort((a, b) => a.localeCompare(b));
 }
@@ -43,9 +46,9 @@ export async function findActiveItem(slugOrId: string) {
 export async function createItem(input: Partial<RentalItem>) {
   const plan = await readPlan(merchant);
   const existing = await queryRows(collections.items, merchant).limit(1000).find();
-  const live = existing.items.filter((row) => text(row.status) !== 'archived').length;
+  const live = liveItemCount(existing.items);
   if (plan.maxItems !== null && live >= plan.maxItems) {
-    return { ok: false as const, message: `The ${plan.tier} plan allows ${plan.maxItems} rental items. Upgrade to add more.` };
+    return { ok: false as const, message: `The ${plan.label} plan allows ${plan.maxItems} rental items. Upgrade to add more.` };
   }
   if (!input.name || !input.dailyRate || input.dailyRate <= 0) {
     return { ok: false as const, message: 'A name and a daily rate are required.' };
@@ -87,6 +90,13 @@ export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   ];
   for (const field of fields) {
     if (patch[field] !== undefined) (next as Record<string, unknown>)[field] = patch[field];
+  }
+  // Restoring an archived item adds one back toward the limit, the same as creating one.
+  if (text(row.status) === 'archived' && text(next.status) !== 'archived' && plan.maxItems !== null) {
+    const existing = await queryRows(collections.items, merchant).limit(1000).find();
+    if (liveItemCount(existing.items) >= plan.maxItems) {
+      return { ok: false as const, message: `The ${plan.label} plan allows ${plan.maxItems} rental items. Upgrade or archive another item first.` };
+    }
   }
   if (!plan.perItemRules) {
     next.bufferDays = row.bufferDays;
@@ -131,10 +141,11 @@ export async function storeCategories() {
  * rental-specific fields remain merchant-owned values in Rental Items.
  */
 export async function resolveStoreRentalItem(productId: string) {
-  const [settings, version, product] = await Promise.all([
+  const [settings, version, product, plan] = await Promise.all([
     loadSettings(merchant),
     getCatalogState(),
     getStoreProduct(productId),
+    readPlan(merchant),
   ]);
   if (!product || !product.physical || !product.visible || product.dailyRate <= 0) {
     return null;
@@ -142,6 +153,12 @@ export async function resolveStoreRentalItem(productId: string) {
 
   const found = await queryRows(collections.items, merchant).eq('storeProductId', productId).limit(1).find();
   const existing = found.items[0] as Row | undefined;
+  if (existing) {
+    if (!(await canBookItem(existing._id, merchant, plan))) return null;
+  } else if (plan.maxItems !== null) {
+    const allItems = await queryRows(collections.items, merchant).limit(1000).find();
+    if (liveItemCount(allItems.items) >= plan.maxItems) return null;
+  }
   const override = text(existing?.storeRentalOverride, 'inherit');
   const explicit = override === 'enabled' || override === 'disabled' ? override : 'inherit';
   const inCategory = settings.storeCategoryVersion === version && productMatchesCategory(product, settings.storeCategoryId);
@@ -242,6 +259,9 @@ export async function createManualBooking(input: {
   const settings = await loadSettings(merchant);
   const item = await loadItem(input.itemId, merchant);
   if (!item) return { ok: false as const, message: 'Item not found.' };
+  if (!(await canBookItem(input.itemId, merchant, plan))) {
+    return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
+  }
   const availability = await checkRange(item, settings, input.startDate, input.endDate, input.quantity, plan.perItemRules, merchant);
   if (!availability.ok || !availability.quote) return { ok: false as const, message: availability.message };
   const reference = newReference();

@@ -1,71 +1,33 @@
 import { appInstances } from '@wix/app-management';
 import { auth } from '@wix/essentials';
+import { APP_ID, collections } from './constants';
+import { pickBookableIds, planFor, resolvePlan, type InstanceSnapshot, type PlanLimits } from './plan-rules';
 import type { Access } from './store';
+import { queryRows } from './store';
 
-export type PlanTier = 'free' | 'starter' | 'pro';
-
-export interface PlanLimits {
-  tier: PlanTier;
-  maxItems: number | null;
-  maxBookingsPerMonth: number | null;
-  manualApproval: boolean;
-  perItemRules: boolean;
-  calendar: boolean;
-  branding: boolean;
-}
-
-const LIMITS: Record<PlanTier, PlanLimits> = {
-  free: {
-    tier: 'free',
-    maxItems: 3,
-    maxBookingsPerMonth: 10,
-    manualApproval: false,
-    perItemRules: false,
-    calendar: false,
-    branding: true,
-  },
-  starter: {
-    tier: 'starter',
-    maxItems: 25,
-    maxBookingsPerMonth: 150,
-    manualApproval: true,
-    perItemRules: false,
-    calendar: false,
-    branding: false,
-  },
-  pro: {
-    tier: 'pro',
-    maxItems: null,
-    maxBookingsPerMonth: null,
-    manualApproval: true,
-    perItemRules: true,
-    calendar: true,
-    branding: false,
-  },
-};
-
-// Sites owned by a verified @wix.com account get every feature regardless of billing.
-// ownerInfo is only returned when the app has the "Read Site Owner Email" permission.
-function isWixStaffOwner(owner?: { email?: string; emailStatus?: string }): boolean {
-  const email = (owner?.email ?? '').trim().toLowerCase();
-  const verified = (owner?.emailStatus ?? '').startsWith('VERIFIED');
-  return verified && email.endsWith('@wix.com');
-}
+export type { PlanLabel, PlanLimits, PlanTier } from './plan-rules';
+export { liveItemCount } from './plan-rules';
 
 export async function readPlan(access: Access): Promise<PlanLimits> {
   try {
     const getInstance = access.elevate
       ? auth.elevate(appInstances.getAppInstance)
       : appInstances.getAppInstance;
-    const response = await getInstance();
-    if (isWixStaffOwner(response.site?.ownerInfo)) return LIMITS.pro;
-    const instance = response.instance;
-    if (!instance || instance.isFree || !instance.billing) return LIMITS.free;
-    const name = (instance.billing.packageName ?? '').toLowerCase();
-    if (name.includes('pro')) return LIMITS.pro;
-    if (name.includes('starter')) return LIMITS.starter;
-    return LIMITS.free;
+    return resolvePlan((await getInstance()) as InstanceSnapshot, APP_ID);
   } catch (error) {
-    return LIMITS.free;
+    console.error('Unable to read the app plan; using the Basic tier.', error);
+    return planFor('free');
   }
+}
+
+/** The item IDs that may accept new bookings under the current plan; `null` means all of them. */
+export async function bookableItemIds(access: Access, plan: PlanLimits): Promise<Set<string> | null> {
+  if (plan.maxItems === null) return null;
+  const result = await queryRows(collections.items, access).limit(1000).find();
+  return pickBookableIds(result.items, plan.maxItems);
+}
+
+export async function canBookItem(itemId: string, access: Access, plan: PlanLimits): Promise<boolean> {
+  const allowed = await bookableItemIds(access, plan);
+  return allowed === null || allowed.has(itemId);
 }

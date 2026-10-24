@@ -1,3 +1,4 @@
+export { AnalyticsSection } from './analytics';
 export { BookingsSection } from './bookings';
 export { CalendarSection } from './calendar';
 export { ItemsSection } from './items';
@@ -12,6 +13,7 @@ export const sections = [
   { id: 'bookings', label: 'Bookings' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'items', label: 'Items' },
+  { id: 'analytics', label: 'Analytics' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 

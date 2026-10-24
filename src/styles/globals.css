@@ -58,6 +58,11 @@
     --primary: oklch(0.55 0.21 262);
     --primary-foreground: oklch(0.99 0 0);
     --secondary: oklch(0.97 0 0);
+    /* Analytics charts: one validated series hue, its light track step, and recessive chrome. */
+    --viz-series: #2a78d6;
+    --viz-track: #cde2fb;
+    --viz-grid: #e1e0d9;
+    --viz-axis: #898781;
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
     --muted-foreground: oklch(0.556 0 0);
@@ -86,6 +91,10 @@
 .dark {
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
+    --viz-series: #3987e5;
+    --viz-track: #184f95;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #898781;
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);

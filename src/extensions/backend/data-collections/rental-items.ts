@@ -2,9 +2,9 @@ import type { DataCollection } from '@wix/astro/builders';
 
 export const collectionIdSuffix = 'rental-items';
 
-// Seeded on install so a new site has something to look at. Fixed IDs let the sample bookings
-// point at them. Only two, so a Free plan site (3 items) can still add its own.
-export const sampleItemIds = { camera: 'sample-camera-kit', tent: 'sample-camping-tent' } as const;
+// Seeded on install so a new site has something to look at. The Basic tier allows one item,
+// so the sample can be edited or archived before a real item is added.
+export const sampleItemIds = { camera: 'sample-camera-kit' } as const;
 
 const sampleItems = [
   {
@@ -20,24 +20,6 @@ const sampleItems = [
     minDays: 2,
     maxDays: 30,
     bufferDays: 1,
-    leadDays: 1,
-    status: 'active',
-    storeProductId: '',
-    storeRentalOverride: 'inherit',
-  },
-  {
-    _id: sampleItemIds.tent,
-    name: 'Four-person tent (sample)',
-    description: 'A sample rental item. Edit it to make it yours, or archive it from the Items tab.',
-    slug: 'sample-camping-tent',
-    category: 'Camping',
-    unitCount: 3,
-    dailyRate: 18,
-    weeklyRate: 90,
-    depositAmount: 40,
-    minDays: 1,
-    maxDays: 21,
-    bufferDays: 0,
     leadDays: 1,
     status: 'active',
     storeProductId: '',

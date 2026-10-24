@@ -18,7 +18,7 @@ const quote = {
   },
 };
 
-// Seeded on install next to the sample items. Both are finished ("returned") with past dates:
+// Seeded on install next to the sample item. It is finished ("returned") with a past date:
 // seed data can't be relative to the install date, so an upcoming booking would go stale, and
 // finished bookings never hold units, so they can't block a real renter's dates.
 const sampleBookings = [
@@ -36,22 +36,6 @@ const sampleBookings = [
     renter: { name: 'Sample Renter', email: 'renter@example.com', phone: '' },
     depositOutcome: { outcome: 'released', amountKept: 0, note: 'Returned in good condition.' },
     idempotencyKey: 'sample-booking-1',
-    refundNeeded: false,
-  },
-  {
-    reference: 'RB-SAMPLE-2',
-    itemId: sampleItemIds.tent,
-    quantity: 2,
-    startDate: '2026-09-18',
-    endDate: '2026-09-21',
-    status: 'returned',
-    holdExtended: false,
-    quote: { days: 3, rental: 108, deposit: 80, total: 188, dailyRate: 18, weeklyRate: 90, quantity: 2 },
-    cartLineItemId: '',
-    ecomOrderId: '',
-    renter: { name: 'Sample Renter', email: 'renter@example.com', phone: '' },
-    depositOutcome: { outcome: 'kept', amountKept: 15, note: 'One tent pole replaced.' },
-    idempotencyKey: 'sample-booking-2',
     refundNeeded: false,
   },
 ];

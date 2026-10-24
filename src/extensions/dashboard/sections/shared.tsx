@@ -77,11 +77,17 @@ export interface StoreCategoryRow {
 
 export interface Plan {
   tier: 'free' | 'starter' | 'pro';
+  label: 'Basic' | 'Pro' | 'Business' | 'Business trial';
   maxItems: number | null;
   maxBookingsPerMonth: number | null;
   manualApproval: boolean;
   perItemRules: boolean;
   calendar: boolean;
+  trialAvailable: boolean;
+  trialActive: boolean;
+  trialEnded: boolean;
+  trialEndDate?: string;
+  upgradeUrl?: string;
 }
 
 // ---------- Shared data: settings, plan and items are needed by every tab ----------
@@ -92,6 +98,8 @@ interface DashboardData {
   items: ItemRow[];
   storeCategories: StoreCategoryRow[];
   storeCatalogVersion: 'V1_CATALOG' | 'V3_CATALOG' | 'STORES_NOT_INSTALLED';
+  /** False for items past the plan's limit after a downgrade: kept and editable, but not bookable. */
+  canBook: (id: string) => boolean;
   itemName: (id: string) => string;
   money: (amount: number) => string;
   reload: () => Promise<void>;
@@ -103,18 +111,20 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
+  const [bookableIds, setBookableIds] = useState<Set<string> | null>(null);
   const [storeCategories, setStoreCategories] = useState<StoreCategoryRow[]>([]);
   const [storeCatalogVersion, setStoreCatalogVersion] = useState<DashboardData['storeCatalogVersion']>('STORES_NOT_INSTALLED');
 
   const reload = useCallback(async () => {
     const [config, catalog, stores] = await Promise.all([
       api<{ settings: Settings; plan: Plan }>('/api/rentals/settings'),
-      api<{ items: ItemRow[] }>('/api/rentals/items'),
+      api<{ items: ItemRow[]; bookableIds: string[] | null }>('/api/rentals/items'),
       api<{ version: DashboardData['storeCatalogVersion']; categories: StoreCategoryRow[] }>('/api/rentals/store-categories'),
     ]);
     setSettings(config.settings);
     setPlan(config.plan);
     setItems(catalog.items);
+    setBookableIds(catalog.bookableIds ? new Set(catalog.bookableIds) : null);
     setStoreCategories(stores.categories);
     setStoreCatalogVersion(stores.version);
   }, []);
@@ -128,6 +138,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
     settings,
     plan,
     items,
+    canBook: (id) => bookableIds === null || bookableIds.has(id),
     storeCategories,
     storeCatalogVersion,
     itemName: (id) => items.find((item) => item._id === id)?.name ?? 'Unknown item',

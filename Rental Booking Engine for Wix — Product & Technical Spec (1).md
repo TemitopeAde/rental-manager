@@ -274,9 +274,9 @@ Proposed: a free tier to win installs against free competitors, and two paid tie
 
 | Plan | Price | Rental items | Bookings / month | Extras |
 | --- | --- | --- | --- | --- |
-| Free | $0 | 3 | 10 | "Powered by" line in emails |
-| Starter | $12 | 25 | 150 | Reminders, manual approval, no branding |
-| Pro | $29 | Unlimited | Unlimited | Calendar view, buffer and lead-time rules per item, priority support |
+| Basic | $0 | 1 | 10 | "Powered by" line in emails |
+| Pro | $12 | 30 | 150 | Reminders, manual approval, no branding |
+| Business | $29 | Unlimited | Unlimited | Calendar view, buffer and lead-time rules per item, priority support |
 
 Enforcement: the backend reads the site's plan on each item create and each hold. Over-limit sites keep existing bookings working; only new items or holds are blocked, with an upgrade prompt in the dashboard. Never block a renter mid-checkout over a plan limit.
 

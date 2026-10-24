@@ -3,7 +3,7 @@ import { getCurrentAppInstance } from './app-instance';
 import { checkRange, loadItem, loadSettings } from './availability';
 import type { Booking, BookingStatus, DateChangeRequest, Quote, Renter } from './models';
 import { bool, num, text } from './models';
-import { readPlan } from './plans';
+import { canBookItem, readPlan } from './plans';
 import { claimUnitsForBooking } from './claim';
 import { getRow, insertRow, queryRows, removeRows, updateRow, type Access, type Row } from './store';
 
@@ -130,9 +130,12 @@ export interface HoldRequest {
   idempotencyKey: string;
 }
 
-export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>, excludeBookingId = '') {
+export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>, excludeBookingId = '', enforcePlan = false) {
   await expireHolds();
   const plan = await readPlan(merchant);
+  if (enforcePlan && !(await canBookItem(input.itemId, merchant, plan))) {
+    return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
+  }
   const settings = await loadSettings(merchant);
   const item = await loadItem(input.itemId, merchant);
   if (!item) return { ok: false as const, message: 'Item not found.' };
@@ -164,6 +167,9 @@ export async function holdRental(input: HoldRequest) {
   }
 
   const plan = await readPlan(merchant);
+  if (!(await canBookItem(input.itemId, merchant, plan))) {
+    return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
+  }
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);

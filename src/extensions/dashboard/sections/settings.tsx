@@ -178,7 +178,7 @@ export function SettingsSection() {
             <CardContent>
               <Row
                 label="Approve each booking myself"
-                description={plan.manualApproval ? 'New bookings wait in Bookings until you approve them.' : 'Available on the Starter and Pro plans.'}
+                description={plan.manualApproval ? 'New bookings wait in Bookings until you approve them.' : 'Available on the Pro and Business plans.'}
               >
                 <Switch
                   checked={draft.approvalMode === 'manual'}
@@ -194,7 +194,7 @@ export function SettingsSection() {
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Crown className="size-4 text-amber-500" />Your plan</CardTitle>
-            <CardDescription><Badge variant="secondary" className="capitalize">{plan.tier}</Badge></CardDescription>
+            <CardDescription><Badge variant="secondary">{plan.label}</Badge></CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-2 text-sm">
@@ -202,6 +202,22 @@ export function SettingsSection() {
                 <li key={limit} className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-600" />{limit}</li>
               ))}
             </ul>
+            {plan.trialActive ? (
+              <p className="mt-4 text-xs text-muted-foreground">
+                Your Business trial is active. Subscribe before it ends to keep these limits.
+              </p>
+            ) : plan.trialEnded ? (
+              <p className="mt-4 text-xs text-muted-foreground">
+                Your Business trial ended{plan.trialEndDate ? ` on ${new Date(plan.trialEndDate).toLocaleDateString()}` : ''}. Items added during it are kept, but only your oldest item takes new bookings.
+              </p>
+            ) : null}
+            {plan.upgradeUrl && !plan.trialActive && (plan.trialAvailable || plan.trialEnded || plan.tier !== 'pro') ? (
+              <Button asChild className="mt-4 w-full">
+                <a href={plan.upgradeUrl} target="_blank" rel="noreferrer">
+                  {plan.trialAvailable ? 'Start free trial' : 'Upgrade plan'}
+                </a>
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       </div>

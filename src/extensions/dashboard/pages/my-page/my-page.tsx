@@ -1,9 +1,10 @@
 import { useState, type FC } from 'react';
-import { CalendarDays, CalendarRange, ClipboardList, Package, Settings } from 'lucide-react';
+import { CalendarDays, CalendarRange, ChartColumn, ClipboardList, Package, Settings } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
+  AnalyticsSection,
   BookingsSection,
   CalendarSection,
   DashboardDataProvider,
@@ -24,6 +25,7 @@ const icons: Record<SectionId, typeof CalendarDays> = {
   bookings: ClipboardList,
   calendar: CalendarRange,
   items: Package,
+  analytics: ChartColumn,
   settings: Settings,
 };
 
@@ -82,7 +84,7 @@ function Shell() {
         </nav>
         {plan ? (
           <div className="hidden border-t px-5 py-4 md:block">
-            <Badge variant="outline" className="capitalize">{plan.tier} plan</Badge>
+            <Badge variant="outline">{plan.label} plan</Badge>
           </div>
         ) : null}
       </aside>
@@ -93,13 +95,14 @@ function Shell() {
               <h1 className="text-xl leading-tight font-semibold">{current.label}</h1>
               <p className="text-sm text-muted-foreground">{today}</p>
             </div>
-            {plan ? <Badge variant="outline" className="capitalize md:hidden">{plan.tier} plan</Badge> : null}
+            {plan ? <Badge variant="outline" className="md:hidden">{plan.label} plan</Badge> : null}
           </div>
           <MembersAreaNotice />
           {active === 'today' ? <TodaySection onNavigate={open} /> : null}
           {active === 'bookings' ? <BookingsSection /> : null}
           {active === 'calendar' ? <CalendarSection /> : null}
           {active === 'items' ? <ItemsSection /> : null}
+          {active === 'analytics' ? <AnalyticsSection /> : null}
           {active === 'settings' ? <SettingsSection /> : null}
         </div>
       </main>

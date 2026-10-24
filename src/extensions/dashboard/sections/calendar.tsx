@@ -94,7 +94,7 @@ export function CalendarSection() {
 
   if (plan && !plan.calendar) {
     return (
-      <EmptyState icon={Lock} title="The calendar is on the Pro plan">
+      <EmptyState icon={Lock} title="The calendar is on the Business plan">
         Upgrade to see every rental on one month view, with pickups and returns for any day.
       </EmptyState>
     );

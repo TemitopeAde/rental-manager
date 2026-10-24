@@ -22,14 +22,25 @@ const statusTone: Record<ItemRow['status'], string> = {
 const statusName: Record<ItemRow['status'], string> = { active: 'Bookable', hidden: 'Hidden', archived: 'Archived' };
 
 export function ItemsSection() {
-  const { items, plan, settings, money, reload } = useDashboard();
+  const { items, plan, settings, money, reload, canBook } = useDashboard();
   const [editing, setEditing] = useState<ItemRow | 'new' | null>(null);
 
   if (!plan || !settings) return <LoadingState />;
 
   const live = items.filter((item) => item.status !== 'archived').length;
   const atLimit = plan.maxItems !== null && live >= plan.maxItems;
+  const overLimit = plan.maxItems !== null && live > plan.maxItems;
   const usage = plan.maxItems ? Math.min(100, (live / plan.maxItems) * 100) : 0;
+  const upgrade = plan.upgradeUrl && !plan.trialActive ? (
+    <Button asChild size="sm" variant={atLimit ? 'default' : 'outline'}>
+      <a href={plan.upgradeUrl} target="_blank" rel="noreferrer">{plan.trialAvailable ? 'Start free trial' : 'Upgrade plan'}</a>
+    </Button>
+  ) : null;
+  const limitHint = overLimit
+    ? `${plan.trialEnded ? 'Your Business trial ended. ' : ''}All your items are kept, but only the oldest ${plan.maxItems === 1 ? 'item takes' : `${plan.maxItems} take`} new bookings. Existing bookings are unaffected.`
+    : atLimit
+      ? 'Upgrade your plan or archive an item to add more.'
+      : 'Archived items don\'t count toward the limit.';
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,12 +53,20 @@ export function ItemsSection() {
       {plan.maxItems !== null ? (
         <div className="flex flex-col gap-2 rounded-xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium">{live} of {plan.maxItems} items on the {plan.tier} plan</span>
-            <span className="text-xs text-muted-foreground">{atLimit ? 'Upgrade your plan or archive an item to add more.' : 'Archived items don\'t count toward the limit.'}</span>
+            <span className="text-sm font-medium">{live} of {plan.maxItems} items on the {plan.label} plan</span>
+            <span className="text-xs text-muted-foreground">{limitHint}</span>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted sm:w-48" role="progressbar" aria-valuenow={live} aria-valuemin={0} aria-valuemax={plan.maxItems}>
-            <div className={cn('h-full rounded-full', atLimit ? 'bg-amber-500' : 'bg-primary')} style={{ width: `${usage}%` }} />
+          <div className="flex items-center gap-3">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted sm:w-48" role="progressbar" aria-valuenow={live} aria-valuemin={0} aria-valuemax={plan.maxItems}>
+              <div className={cn('h-full rounded-full', atLimit ? 'bg-amber-500' : 'bg-primary')} style={{ width: `${usage}%` }} />
+            </div>
+            {upgrade}
           </div>
+        </div>
+      ) : plan.trialActive ? (
+        <div className="rounded-xl border bg-card p-4 text-sm">
+          <span className="font-medium">Business trial:</span> unlimited items and bookings.
+          <span className="text-muted-foreground"> If it ends without a subscription, only your oldest item keeps taking new bookings.</span>
         </div>
       ) : null}
 
@@ -86,7 +105,13 @@ export function ItemsSection() {
                   <TableCell className="text-right tabular-nums">{item.weeklyRate ? money(item.weeklyRate) : '—'}</TableCell>
                   <TableCell className="text-right tabular-nums">{item.depositAmount ? money(item.depositAmount) : '—'}</TableCell>
                   <TableCell className="text-right tabular-nums">{item.unitCount}</TableCell>
-                  <TableCell><Badge variant="secondary" className={cn('border-0', statusTone[item.status])}>{statusName[item.status]}</Badge></TableCell>
+                  <TableCell>
+                    {item.status === 'active' && !canBook(item._id) ? (
+                      <Badge variant="secondary" className="border-0 bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300" title="Over your plan's item limit. Upgrade to take new bookings.">Over limit</Badge>
+                    ) : (
+                      <Badge variant="secondary" className={cn('border-0', statusTone[item.status])}>{statusName[item.status]}</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="pr-4 text-right">
                     <Button size="icon-sm" variant="ghost" aria-label={`Edit ${item.name}`}><Pencil /></Button>
                   </TableCell>
@@ -247,7 +272,7 @@ function ItemSheet({ item, perItemRules, currency, money, defaults, onClose, onS
               <TextField id="item-buffer" label="Buffer days" hint="Gap between rentals" tip="Days kept free after each return for cleaning or repairs before the next pickup." disabled={!perItemRules && !isNew} {...num('bufferDays')} />
               <TextField id="item-lead" label="Lead days" hint="Notice before pickup" tip="How many days ahead renters must book. 0 allows same-day pickup." disabled={!perItemRules && !isNew} {...num('leadDays')} />
             </div>
-            {!perItemRules ? <p className="text-xs text-muted-foreground">Per-item buffer and lead days are on the Pro plan; your defaults from Settings apply.</p> : null}
+            {!perItemRules ? <p className="text-xs text-muted-foreground">Per-item buffer and lead days are on the Business plan; your defaults from Settings apply.</p> : null}
           </fieldset>
         </div>
 
