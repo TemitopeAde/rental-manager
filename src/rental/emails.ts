@@ -89,10 +89,121 @@ function summary(booking: Booking, itemName: string, currency: string): Array<[s
   ];
 }
 
+// A paid order has become a rental booking: let the site owner know, including
+// whether the booking is ready or waiting for manual approval.
+export async function emailPaidBookingReceived(booking: Booking, orderId: string) {
+  try {
+    if (!(await loadSettings(merchant)).emailOwnerNewBookings) return;
+    const { itemName, currency } = await details(booking);
+    const rows = summary(booking, itemName, currency);
+    if (booking.renter.email) rows.push(['Renter email', booking.renter.email]);
+    if (booking.renter.phone) rows.push(['Renter phone', booking.renter.phone]);
+    rows.push(['Order', orderId]);
+    const needsApproval = booking.status === 'pending';
+    const owner = await ownerEmail();
+    await send(
+      { email: owner },
+      `New paid booking ${booking.reference}`,
+      layout(
+        needsApproval ? 'A new booking needs approval' : 'A new booking is confirmed',
+        [
+          `${escape(booking.renter.name || booking.renter.email || 'A renter')} paid for this rental.`,
+          needsApproval
+            ? 'Open Rentals → Bookings in your site dashboard to approve or decline.'
+            : 'The booking is confirmed. Open Rentals → Bookings in your site dashboard to view it.',
+        ],
+        rows,
+      ),
+      `${booking._id}:${orderId}:owner-paid-booking`,
+    );
+  } catch (error) {
+    // Email problems must not undo or block a paid booking.
+  }
+}
+
+export async function emailRefundNeeded(booking: Booking, orderId: string) {
+  try {
+    if (!(await loadSettings(merchant)).emailOwnerRefundAlerts) return;
+    const { itemName, currency } = await details(booking);
+    const owner = await ownerEmail();
+    await send(
+      { email: owner },
+      `Refund needed for ${booking.reference}`,
+      layout(
+        'A paid order could not be matched to available rental dates',
+        ['The booking hold expired before payment was confirmed. Review the Wix order and refund it if the rental cannot be honored.'],
+        [...summary(booking, itemName, currency), ['Order', orderId]],
+      ),
+      `${booking._id}:${orderId}:owner-refund-needed`,
+    );
+  } catch (error) {
+    // Email problems must not block the paid order handling.
+  }
+}
+
+export async function emailBookingUpdate(
+  after: Booking,
+  action: 'approve' | 'decline' | 'cancel' | 'pickup' | 'returned' | 'manual',
+  reason = '',
+) {
+  try {
+    if (!(await loadSettings(merchant)).emailRentersBookingUpdates) return;
+    const { itemName, currency } = await details(after);
+    const messages: Record<typeof action, { subject: string; heading: string; message: string }> = {
+      approve: { subject: `Your rental ${after.reference} is confirmed`, heading: 'Booking confirmed', message: 'The shop approved your rental.' },
+      decline: { subject: `Update on your rental ${after.reference}`, heading: 'Booking not approved', message: 'The shop could not approve your rental. Contact the shop if you have questions about your payment.' },
+      cancel: { subject: `Your rental ${after.reference} was cancelled`, heading: 'Booking cancelled', message: 'The shop cancelled your rental.' },
+      pickup: { subject: `Pickup recorded for ${after.reference}`, heading: 'Rental picked up', message: 'The shop recorded that you picked up this rental.' },
+      returned: { subject: `Return recorded for ${after.reference}`, heading: 'Rental returned', message: 'The shop recorded that you returned this rental.' },
+      manual: { subject: `Your rental ${after.reference} is booked`, heading: 'Rental booked', message: 'The shop created this rental booking for you.' },
+    };
+    const email = messages[action];
+    const paragraphs = [`Hi ${escape(after.renter.name || 'there')},`, email.message];
+    if (reason) paragraphs.push(escape(reason));
+    if (action === 'cancel' && after.ecomOrderId) {
+      paragraphs.push('The shop will handle any refund through the original Wix order.');
+    }
+    await send(
+      { email: after.renter.email, name: after.renter.name },
+      email.subject,
+      layout(email.heading, paragraphs, summary(after, itemName, currency)),
+      `${after._id}:renter-booking-update:${action}`,
+    );
+  } catch (error) {
+    // Email problems must not undo or block the booking change.
+  }
+}
+
+export async function emailDepositSettled(booking: Booking) {
+  try {
+    if (!(await loadSettings(merchant)).emailRentersDepositUpdates) return;
+    const outcome = booking.depositOutcome;
+    if (!outcome) return;
+    const { itemName, currency } = await details(booking);
+    const kept = money(outcome.amountKept, currency);
+    const paragraphs = [
+      `Hi ${escape(booking.renter.name || 'there')},`,
+      outcome.outcome === 'kept'
+        ? `The shop kept ${kept} from your deposit. The remaining deposit is to be refunded through the original Wix order.`
+        : 'The shop released your deposit. The refund will be handled through the original Wix order.',
+    ];
+    if (outcome.note) paragraphs.push(escape(outcome.note));
+    await send(
+      { email: booking.renter.email, name: booking.renter.name },
+      `Deposit settled for ${booking.reference}`,
+      layout('Deposit settled', paragraphs, [...summary(booking, itemName, currency), ['Amount kept', kept]]),
+      `${booking._id}:deposit-settled`,
+    );
+  } catch (error) {
+    // Email problems must not undo or block the deposit record.
+  }
+}
+
 // A renter just asked to move or cancel: tell the owner it needs a decision, and confirm receipt to the renter.
 export async function emailRequestReceived(booking: Booking) {
   const request = booking.changeRequest;
   if (!request) return;
+  try {
   const { itemName, currency } = await details(booking);
   const rows = summary(booking, itemName, currency);
   const isCancel = request.type === 'cancel';
@@ -101,62 +212,75 @@ export async function emailRequestReceived(booking: Booking) {
   }
   const renter = booking.renter.name || booking.renter.email || 'A renter';
   const key = `${booking._id}:${request.requestedAt}`;
-  const owner = await ownerEmail();
-  await send(
-    { email: owner },
-    isCancel ? `Cancellation request for ${booking.reference}` : `Date change request for ${booking.reference}`,
-    layout(
-      isCancel ? 'A renter wants to cancel' : 'A renter wants new dates',
-      [
-        `${escape(renter)} asked to ${isCancel ? 'cancel this rental' : 'move this rental'}.`,
-        'Open Rentals → Bookings in your site dashboard to approve or decline.',
-      ],
-      rows,
-    ),
-    `${key}:owner`,
-  );
-  await send(
-    { email: booking.renter.email, name: booking.renter.name },
-    isCancel ? `We received your cancellation request (${booking.reference})` : `We received your date change request (${booking.reference})`,
-    layout(
-      'Request received',
-      [
-        `Hi ${escape(booking.renter.name || 'there')},`,
-        `Thanks, we got your request to ${isCancel ? 'cancel' : 'change the dates of'} this rental. Nothing changes until the shop confirms, and we'll email you as soon as it does.`,
-      ],
-      rows,
-    ),
-    `${key}:renter-received`,
-  );
+    const settings = await loadSettings(merchant);
+    if (settings.emailOwnerRenterRequests) {
+      const owner = await ownerEmail();
+      await send(
+        { email: owner },
+        isCancel ? `Cancellation request for ${booking.reference}` : `Date change request for ${booking.reference}`,
+        layout(
+          isCancel ? 'A renter wants to cancel' : 'A renter wants new dates',
+          [
+            `${escape(renter)} asked to ${isCancel ? 'cancel this rental' : 'move this rental'}.`,
+            'Open Rentals → Bookings in your site dashboard to approve or decline.',
+          ],
+          rows,
+        ),
+        `${key}:owner`,
+      );
+    }
+    if (settings.emailRentersRequestUpdates) {
+      await send(
+        { email: booking.renter.email, name: booking.renter.name },
+        isCancel ? `We received your cancellation request (${booking.reference})` : `We received your date change request (${booking.reference})`,
+        layout(
+          'Request received',
+          [
+            `Hi ${escape(booking.renter.name || 'there')},`,
+            `Thanks, we got your request to ${isCancel ? 'cancel' : 'change the dates of'} this rental. Nothing changes until the shop confirms, and we'll email you as soon as it does.`,
+          ],
+          rows,
+        ),
+        `${key}:renter-received`,
+      );
+    }
+  } catch (error) {
+    // Email problems must not undo or block a renter request.
+  }
 }
 
 // The owner approved or declined a request: let the renter know the outcome.
 export async function emailRequestResolved(before: Booking, after: Booking, approved: boolean, note = '') {
   const request = before.changeRequest;
   if (!request) return;
-  const { itemName, currency } = await details(after);
-  const isCancel = request.type === 'cancel';
-  const subject = approved
-    ? isCancel
-      ? `Your rental ${before.reference} is cancelled`
-      : `Your new dates for ${before.reference} are confirmed`
-    : isCancel
-      ? `Your cancellation request for ${before.reference}`
-      : `Your date change request for ${before.reference}`;
-  const message = approved
-    ? isCancel
-      ? 'The shop approved your cancellation. Any refund is sent to your original payment method.'
-      : `The shop approved your new dates: ${escape(dateRange(request.startDate, request.endDate))}.`
-    : isCancel
-      ? 'The shop couldn’t approve your cancellation, so your rental stays booked as before.'
-      : `The shop couldn’t move your rental to ${escape(dateRange(request.startDate, request.endDate))}, so your original dates still stand.`;
-  const paragraphs = [`Hi ${escape(after.renter.name || 'there')},`, message];
-  if (approved && note) paragraphs.push(escape(note));
-  paragraphs.push('Reply to this email if you have any questions.');
-  await send(
-    { email: after.renter.email, name: after.renter.name },
-    subject,
-    layout(approved ? 'Request approved' : 'Request declined', paragraphs, summary(after, itemName, currency)),
-    `${before._id}:${request.requestedAt}:${approved ? 'approved' : 'declined'}`,
-  );
+  try {
+    if (!(await loadSettings(merchant)).emailRentersRequestUpdates) return;
+    const { itemName, currency } = await details(after);
+    const isCancel = request.type === 'cancel';
+    const subject = approved
+      ? isCancel
+        ? `Your rental ${before.reference} is cancelled`
+        : `Your new dates for ${before.reference} are confirmed`
+      : isCancel
+        ? `Your cancellation request for ${before.reference}`
+        : `Your date change request for ${before.reference}`;
+    const message = approved
+      ? isCancel
+        ? 'The shop approved your cancellation. Any refund is sent to your original payment method.'
+        : `The shop approved your new dates: ${escape(dateRange(request.startDate, request.endDate))}.`
+      : isCancel
+        ? 'The shop couldn’t approve your cancellation, so your rental stays booked as before.'
+        : `The shop couldn’t move your rental to ${escape(dateRange(request.startDate, request.endDate))}, so your original dates still stand.`;
+    const paragraphs = [`Hi ${escape(after.renter.name || 'there')},`, message];
+    if (approved && note) paragraphs.push(escape(note));
+    paragraphs.push('Reply to this email if you have any questions.');
+    await send(
+      { email: after.renter.email, name: after.renter.name },
+      subject,
+      layout(approved ? 'Request approved' : 'Request declined', paragraphs, summary(after, itemName, currency)),
+      `${before._id}:${request.requestedAt}:${approved ? 'approved' : 'declined'}`,
+    );
+  } catch (error) {
+    // Email problems must not undo or block the booking change.
+  }
 }

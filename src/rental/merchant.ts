@@ -11,6 +11,7 @@ import { canBookItem, liveItemCount, readPlan } from './plans';
 import { defaultSettings } from './availability';
 import { insertRow, queryRows, removeRow, updateRow, getRow, type Row } from './store';
 import { getCatalogState, getStoreProduct, listStoreCategories, productMatchesCategory } from './stores';
+import { emailBookingUpdate } from './emails';
 
 const merchant = { elevate: true };
 
@@ -121,6 +122,12 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.defaultLeadDays !== undefined) next.defaultLeadDays = patch.defaultLeadDays;
   if (patch.countReturnDay !== undefined) next.countReturnDay = patch.countReturnDay;
   if (patch.emailSenderName) next.emailSenderName = patch.emailSenderName;
+  if (patch.emailOwnerNewBookings !== undefined) next.emailOwnerNewBookings = patch.emailOwnerNewBookings;
+  if (patch.emailOwnerRenterRequests !== undefined) next.emailOwnerRenterRequests = patch.emailOwnerRenterRequests;
+  if (patch.emailOwnerRefundAlerts !== undefined) next.emailOwnerRefundAlerts = patch.emailOwnerRefundAlerts;
+  if (patch.emailRentersRequestUpdates !== undefined) next.emailRentersRequestUpdates = patch.emailRentersRequestUpdates;
+  if (patch.emailRentersBookingUpdates !== undefined) next.emailRentersBookingUpdates = patch.emailRentersBookingUpdates;
+  if (patch.emailRentersDepositUpdates !== undefined) next.emailRentersDepositUpdates = patch.emailRentersDepositUpdates;
   if (patch.membersAreaInstalled !== undefined) next.membersAreaInstalled = patch.membersAreaInstalled;
   if (patch.storeCategoryId !== undefined) next.storeCategoryId = patch.storeCategoryId;
   if (patch.storeCategoryName !== undefined) next.storeCategoryName = patch.storeCategoryName;
@@ -289,7 +296,9 @@ export async function createManualBooking(input: {
     await updateRow(collections.bookings, { ...created, status: 'expired' }, merchant);
     return { ok: false as const, message: 'Those dates were just taken.' };
   }
-  return { ok: true as const, booking: asBooking(created) };
+  const booking = asBooking(created);
+  await emailBookingUpdate(booking, 'manual');
+  return { ok: true as const, booking };
 }
 
 export async function rentalSummary(from: string, to: string) {

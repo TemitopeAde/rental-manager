@@ -29,6 +29,12 @@ export const POST: APIRoute = async ({ request }) => {
     defaultLeadDays: body.defaultLeadDays === undefined ? undefined : int(body.defaultLeadDays, 1),
     countReturnDay: typeof body.countReturnDay === 'boolean' ? body.countReturnDay : undefined,
     emailSenderName: str(body.emailSenderName) || undefined,
+    emailOwnerNewBookings: typeof body.emailOwnerNewBookings === 'boolean' ? body.emailOwnerNewBookings : undefined,
+    emailOwnerRenterRequests: typeof body.emailOwnerRenterRequests === 'boolean' ? body.emailOwnerRenterRequests : undefined,
+    emailOwnerRefundAlerts: typeof body.emailOwnerRefundAlerts === 'boolean' ? body.emailOwnerRefundAlerts : undefined,
+    emailRentersRequestUpdates: typeof body.emailRentersRequestUpdates === 'boolean' ? body.emailRentersRequestUpdates : undefined,
+    emailRentersBookingUpdates: typeof body.emailRentersBookingUpdates === 'boolean' ? body.emailRentersBookingUpdates : undefined,
+    emailRentersDepositUpdates: typeof body.emailRentersDepositUpdates === 'boolean' ? body.emailRentersDepositUpdates : undefined,
     storeCategoryId: str(body.storeCategoryId),
     storeCategoryName: str(body.storeCategoryName),
     storeCategoryVersion:

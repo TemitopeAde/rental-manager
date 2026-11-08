@@ -189,6 +189,33 @@ export function SettingsSection() {
               </Row>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Email notifications</CardTitle>
+              <CardDescription>Choose which booking updates are emailed. Changes save with your other settings.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <Row label="Email me about new paid bookings" description="Includes bookings waiting for your approval.">
+                <Switch checked={draft.emailOwnerNewBookings} onCheckedChange={(checked) => set('emailOwnerNewBookings', checked)} aria-label="Email me about new paid bookings" />
+              </Row>
+              <Row label="Email me about renter change or cancellation requests">
+                <Switch checked={draft.emailOwnerRenterRequests} onCheckedChange={(checked) => set('emailOwnerRenterRequests', checked)} aria-label="Email me about renter requests" />
+              </Row>
+              <Row label="Email me when a paid booking needs a refund" description="For example, when a payment arrives after its hold expired.">
+                <Switch checked={draft.emailOwnerRefundAlerts} onCheckedChange={(checked) => set('emailOwnerRefundAlerts', checked)} aria-label="Email me about bookings that need a refund" />
+              </Row>
+              <Row label="Email renters about request decisions" description="When you approve or decline a date change or cancellation request.">
+                <Switch checked={draft.emailRentersRequestUpdates} onCheckedChange={(checked) => set('emailRentersRequestUpdates', checked)} aria-label="Email renters about request decisions" />
+              </Row>
+              <Row label="Email renters about booking status changes" description="Approval, cancellation, pickup, return, and manually created bookings.">
+                <Switch checked={draft.emailRentersBookingUpdates} onCheckedChange={(checked) => set('emailRentersBookingUpdates', checked)} aria-label="Email renters about booking status changes" />
+              </Row>
+              <Row label="Email renters when you settle their deposit">
+                <Switch checked={draft.emailRentersDepositUpdates} onCheckedChange={(checked) => set('emailRentersDepositUpdates', checked)} aria-label="Email renters about deposit settlement" />
+              </Row>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="h-fit">

@@ -63,6 +63,12 @@ export interface Settings {
   defaultMaxDays: number;
   defaultLeadDays: number;
   countReturnDay: boolean;
+  emailOwnerNewBookings: boolean;
+  emailOwnerRenterRequests: boolean;
+  emailOwnerRefundAlerts: boolean;
+  emailRentersRequestUpdates: boolean;
+  emailRentersBookingUpdates: boolean;
+  emailRentersDepositUpdates: boolean;
   currency: string;
   storeCategoryId: string;
   storeCategoryName: string;

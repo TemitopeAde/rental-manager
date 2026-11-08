@@ -96,6 +96,12 @@ export interface Settings {
   defaultLeadDays: number;
   countReturnDay: boolean;
   emailSenderName: string;
+  emailOwnerNewBookings: boolean;
+  emailOwnerRenterRequests: boolean;
+  emailOwnerRefundAlerts: boolean;
+  emailRentersRequestUpdates: boolean;
+  emailRentersBookingUpdates: boolean;
+  emailRentersDepositUpdates: boolean;
   // Confirmed from the dashboard; online bookings stay closed until the Members Area is installed.
   membersAreaInstalled: boolean;
   currency: string;

@@ -57,17 +57,23 @@ const Button = React.forwardRef<
 ) {
   const Comp = asChild ? Slot.Root : "button"
 
+  const buttonProps = {
+    ref,
+    "data-slot": "button",
+    "data-variant": variant,
+    "data-size": size,
+    className: cn(buttonVariants({ variant, size, className })),
+    "aria-busy": loading || undefined,
+    disabled: disabled || loading,
+    ...props,
+  }
+
+  // Slot requires exactly one element child. Avoid wrapping an asChild target with
+  // the optional loading indicator (or a null sibling).
+  if (asChild) return <Comp {...buttonProps}>{children}</Comp>
+
   return (
-    <Comp
-      ref={ref}
-      data-slot="button"
-      data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
-      aria-busy={loading || undefined}
-      disabled={disabled || loading}
-      {...props}
-    >
+    <Comp {...buttonProps}>
       {loading ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : null}
       {children}
     </Comp>

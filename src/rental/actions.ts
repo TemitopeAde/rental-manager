@@ -8,7 +8,7 @@ import { text } from './models';
 import { readPlan } from './plans';
 import { getRow, insertRow, queryRows, updateRow, type Row } from './store';
 import { claimUnitsForBooking } from './claim';
-import { emailRequestResolved } from './emails';
+import { emailBookingUpdate, emailDepositSettled, emailPaidBookingReceived, emailRefundNeeded, emailRequestResolved } from './emails';
 
 const merchant = { elevate: true };
 
@@ -38,8 +38,10 @@ export async function confirmPaid(
     const reclaimed = await reclaim(booking);
     if (!reclaimed) {
       const updated = await updateRow(collections.bookings, { ...row, refundNeeded: true, ecomOrderId: orderId }, merchant);
+      const refundBooking = asBooking(updated);
       await audit('refund-needed', `Order ${orderId} paid after the hold expired.`, bookingId, 'order');
-      return { ok: false as const, booking: asBooking(updated), message: 'Hold expired and the units are gone. Refund this order.' };
+      await emailRefundNeeded(refundBooking, orderId);
+      return { ok: false as const, booking: refundBooking, message: 'Hold expired and the units are gone. Refund this order.' };
     }
   } else if (booking.status !== 'hold' || !catalogAvailable(booking)) {
     return { ok: false as const, message: `Booking is ${booking.status}.` };
@@ -58,7 +60,9 @@ export async function confirmPaid(
     },
   });
   await audit(next, `${booking.reference} is ${next} from order ${orderId}.`, bookingId, 'order');
-  return { ok: true as const, booking: asBooking(updated) };
+  const paidBooking = asBooking(updated);
+  await emailPaidBookingReceived(paidBooking, orderId);
+  return { ok: true as const, booking: paidBooking };
 }
 
 async function reclaim(booking: Booking): Promise<boolean> {
@@ -102,6 +106,7 @@ export async function transition(
   action: 'approve' | 'decline' | 'pickup' | 'returned' | 'cancel',
   source: string,
   reason = '',
+  notifyRenter = true,
 ) {
   const booking = await findBooking(referenceOrId);
   if (!booking) return { ok: false as const, message: 'Booking not found.' };
@@ -118,13 +123,17 @@ export async function transition(
       ? ` Refund the payment on Wix order ${booking.ecomOrderId}.`
       : '';
     await audit(action, `${reason || action}.${refund}`, booking._id, source);
-    return { ok: true as const, booking: asBooking(updated), refundOrderId: booking.ecomOrderId };
+    const cancelled = asBooking(updated);
+    if (notifyRenter) await emailBookingUpdate(cancelled, action, reason);
+    return { ok: true as const, booking: cancelled, refundOrderId: booking.ecomOrderId };
   }
   const next: BookingStatus = action === 'approve' ? 'confirmed' : action === 'pickup' ? 'active' : 'returned';
   if (next === 'returned') await releaseAfterReturn(booking);
   const updated = await saveStatus(row, next);
   await audit(action, `${booking.reference} marked ${next}.`, booking._id, source);
-  return { ok: true as const, booking: asBooking(updated), refundOrderId: '' };
+  const changed = asBooking(updated);
+  if (notifyRenter) await emailBookingUpdate(changed, action);
+  return { ok: true as const, booking: changed, refundOrderId: '' };
 }
 
 // Applies or turns down a renter's request. A cancellation runs the normal cancel transition. A date change
@@ -152,7 +161,7 @@ export async function resolveChangeRequest(referenceOrId: string, decision: 'app
     return { ok: true as const, booking: updated, message: isCancel ? 'Cancellation declined.' : 'Date change declined.' };
   }
   if (isCancel) {
-    const result = await transition(booking._id, 'cancel', source, 'Cancelled at renter\'s request');
+    const result = await transition(booking._id, 'cancel', source, 'Cancelled at renter\'s request', false);
     if (!result.ok) return result;
     const cleared = await getRow(collections.bookings, booking._id, merchant);
     const updated = cleared ? asBooking(await updateRow(collections.bookings, { ...cleared, changeRequest: null }, merchant)) : result.booking;
@@ -245,6 +254,7 @@ export async function settleDeposit(referenceOrId: string, amountKept: number, n
     merchant,
   );
   await audit('settle-deposit', `${outcome} ${amountKept}. ${note}`, booking._id, source);
+  await emailDepositSettled(asBooking(updated));
   return {
     ok: true as const,
     booking: asBooking(updated),
