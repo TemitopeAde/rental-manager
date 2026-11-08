@@ -31,5 +31,21 @@ import rentalDetails1 from './extensions/site/components/rental-details/rental-d
 
 import myRentals1 from './extensions/site/components/my-rentals/my-rentals.extension.ts';
 
+import appInstalled from './extensions/backend/events/app-installed/app-installed.extension.ts';
+
+import appRemoved from './extensions/backend/events/app-removed/app-removed.extension.ts';
+
+import paidPlanPurchased from './extensions/backend/events/paid-plan-purchased/paid-plan-purchased.extension.ts';
+
+import paidPlanChanged from './extensions/backend/events/paid-plan-changed/paid-plan-changed.extension.ts';
+
+import paidPlanAutoRenewalCancelled from './extensions/backend/events/paid-plan-auto-renewal-cancelled/paid-plan-auto-renewal-cancelled.extension.ts';
+
+import planConvertedToPaid from './extensions/backend/events/plan-converted-to-paid/plan-converted-to-paid.extension.ts';
+
+import planReactivated from './extensions/backend/events/plan-reactivated/plan-reactivated.extension.ts';
+
+import planTransferred from './extensions/backend/events/plan-transferred/plan-transferred.extension.ts';
+
 export default app()
-  .use(myPage).use(dataCollections).use(orderApproved).use(orderCanceled).use(rentalTools).use(rentalTools1).use(rentalCatalogPlugin).use(rentalBooking).use(rentalCatalog).use(rentalBooking1).use(rentalCatalog1).use(rentalDetails).use(rentalStoreProduct).use(myRentals).use(rentalDetails1).use(myRentals1);
+  .use(myPage).use(dataCollections).use(orderApproved).use(orderCanceled).use(rentalTools).use(rentalTools1).use(rentalCatalogPlugin).use(rentalBooking).use(rentalCatalog).use(rentalBooking1).use(rentalCatalog1).use(rentalDetails).use(rentalStoreProduct).use(myRentals).use(rentalDetails1).use(myRentals1).use(appInstalled).use(appRemoved).use(paidPlanPurchased).use(paidPlanChanged).use(paidPlanAutoRenewalCancelled).use(planConvertedToPaid).use(planReactivated).use(planTransferred);

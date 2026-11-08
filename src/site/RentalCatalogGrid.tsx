@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type HTMLAttributes } from 'react';
 import { request } from './client';
-import { money, partClass, sizedImage } from './format';
+import { partClass, sizedImage } from './format';
+import { useSiteI18n } from './i18n';
 import { absolute, itemPath, navigate, useSiteBase } from './links';
 import { itemKey, type CatalogItem } from './types';
 import styles from './rental.module.css';
@@ -34,7 +35,7 @@ const samples: CatalogItem[] = [
 ];
 
 export function RentalCatalogGrid({
-  title = 'Rentals',
+  title,
   columns = 3,
   pageSize = 12,
   priceBasis = 'daily',
@@ -43,11 +44,11 @@ export function RentalCatalogGrid({
   showSort = true,
   showRibbon = true,
   showButton = true,
-  buttonLabel = 'View details',
-  detailsPage = '/rental-details',
+  buttonLabel,
   imageRatio = 'square',
   imageHover = 'swap',
   textAlign = 'start',
+  language,
   parts,
 }: {
   title?: string;
@@ -60,14 +61,15 @@ export function RentalCatalogGrid({
   showRibbon?: boolean;
   showButton?: boolean;
   buttonLabel?: string;
-  detailsPage?: string;
   imageRatio?: ImageRatio;
   imageHover?: ImageHover;
   textAlign?: 'start' | 'center';
+  language?: string;
   parts?: CatalogParts;
 }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [currency, setCurrency] = useState<string | undefined>();
+  const [apiLanguage, setApiLanguage] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState('');
@@ -76,18 +78,29 @@ export function RentalCatalogGrid({
   const [shown, setShown] = useState(size);
   const base = useSiteBase();
 
+  const { t, isRtl, money } = useSiteI18n(language || apiLanguage);
+
+  const sortOptions: Array<{ value: SortOrder; label: string }> = [
+    { value: 'featured', label: t('sort_featured') },
+    { value: 'price-asc', label: t('sort_price_asc') },
+    { value: 'price-desc', label: t('sort_price_desc') },
+    { value: 'name-asc', label: t('sort_name_asc') },
+    { value: 'name-desc', label: t('sort_name_desc') },
+  ];
+
   // Each tab asks the backend for its own items; `active` drops a slow response for a tab
   // the visitor has already left.
   useEffect(() => {
     let active = true;
     setLoading(true);
     const query = category ? `?category=${encodeURIComponent(category)}` : '';
-    request<{ items: CatalogItem[]; categories?: string[]; currency?: string }>(`/api/rentals/catalog${query}`)
+    request<{ items: CatalogItem[]; categories?: string[]; currency?: string; language?: string }>(`/api/rentals/catalog${query}`)
       .then((body) => {
         if (!active) return;
         setItems(body.items);
         setCategories(body.categories ?? []);
         setCurrency(body.currency);
+        if (body.language) setApiLanguage(body.language);
       })
       .catch(() => {
         if (!active) return;
@@ -140,15 +153,19 @@ export function RentalCatalogGrid({
   // Sort stays visible while a filtered tab has a single item, so the toolbar doesn't jump.
   const sortable = showSort && (items.length > 1 || category !== '');
   const toolbar = (showCategoryFilter && categories.length > 1) || sortable;
+  const isDefaultTitle = !title || title === 'Rentals';
+  const effectiveTitle = isDefaultTitle ? t('catalog_title') : title;
+  const isDefaultButton = !buttonLabel || buttonLabel === 'View details';
+  const effectiveButtonLabel = isDefaultButton ? t('view_details') : buttonLabel;
 
   return (
-    <section className={styles.catalog} data-align={textAlign}>
+    <section className={styles.catalog} data-align={textAlign} dir={isRtl ? 'rtl' : 'ltr'}>
       <header className={styles.catalogHeader}>
-        {title ? <h2 {...parts?.title} className={partClass(styles.heading, parts?.title)}>{title}</h2> : null}
+        {effectiveTitle ? <h2 {...parts?.title} className={partClass(styles.heading, parts?.title)}>{effectiveTitle}</h2> : null}
         {toolbar ? (
           <div className={styles.toolbar}>
             {showCategoryFilter && categories.length > 1 ? (
-              <div className={styles.chips} role="group" aria-label="Filter by category">
+              <div className={styles.chips} role="group" aria-label={t('filter_category')}>
                 {['', ...categories].map((name) => (
                   <button
                     key={name || 'all'}
@@ -158,14 +175,14 @@ export function RentalCatalogGrid({
                     aria-pressed={category === name}
                     onClick={() => choose(name)}
                   >
-                    {name || 'All'}
+                    {name || t('all')}
                   </button>
                 ))}
               </div>
             ) : <span />}
             {sortable ? (
               <label className={styles.sort}>
-                <span className={styles.sortLabel}>Sort by</span>
+                <span className={styles.sortLabel}>{t('sort_by')}</span>
                 <span className={styles.selectWrap}>
                   <select className={styles.sortSelect} value={sort} onChange={(event) => setSort(event.target.value as SortOrder)}>
                     {sortOptions.map((option) => (
@@ -190,15 +207,15 @@ export function RentalCatalogGrid({
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <p className={styles.empty}>No rentals are available right now. Check back soon.</p>
+        <p className={styles.empty}>{t('empty_catalog')}</p>
       ) : (
         <ul className={styles.grid} style={gridStyle}>
           {visible.map((item) => {
-            const path = itemPath(detailsPage, itemKey(item));
+            const path = itemPath('/rental-details', itemKey(item));
             const href = path ? absolute(base, path) : undefined;
             const [first, second] = item.images ?? [];
             const swap = imageHover === 'swap' && second;
-            const unit = weekly && item.weeklyRate > 0 ? 'week' : 'day';
+            const unit = weekly && item.weeklyRate > 0 ? t('per_week') : t('per_day');
             return (
               <li key={item._id} {...parts?.card} className={[styles.card, parts?.card?.className].filter(Boolean).join(' ')} data-hover={imageHover}>
                 <a
@@ -225,9 +242,9 @@ export function RentalCatalogGrid({
                   {showDescription && item.description ? <p className={styles.cardText}>{item.description}</p> : null}
                   <p {...parts?.price} className={partClass(styles.price, parts?.price)}>
                     {money(priceOf(item), currency)}
-                    <span className={styles.priceUnit}> / {unit}</span>
+                    <span className={styles.priceUnit}>{unit}</span>
                   </p>
-                  {item.minDays && item.minDays > 1 ? <span className={styles.cardMeta}>{item.minDays}-day minimum</span> : null}
+                  {item.minDays && item.minDays > 1 ? <span className={styles.cardMeta}>{t('min_days', { count: item.minDays })}</span> : null}
                 </div>
                 {showButton ? (
                   <a
@@ -235,9 +252,9 @@ export function RentalCatalogGrid({
                     className={[styles.cardButton, parts?.button?.className].filter(Boolean).join(' ')}
                     href={href}
                     onClick={(event) => navigate(event, path)}
-                    aria-label={`${buttonLabel}: ${item.name}`}
+                    aria-label={`${effectiveButtonLabel}: ${item.name}`}
                   >
-                    {buttonLabel}
+                    {effectiveButtonLabel}
                   </a>
                 ) : null}
               </li>
@@ -254,9 +271,9 @@ export function RentalCatalogGrid({
             className={[styles.pagerButton, parts?.button?.className].filter(Boolean).join(' ')}
             onClick={() => setShown((value) => value + size)}
           >
-            Load more
+            {t('load_more')}
           </button>
-          <span className={styles.pagerStatus}>Showing {visible.length} of {sorted.length}</span>
+          <span className={styles.pagerStatus}>{t('showing_count', { shown: visible.length, total: sorted.length })}</span>
         </div>
       ) : null}
     </section>

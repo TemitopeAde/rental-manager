@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { post } from '@/dashboard/client';
+import { useI18n } from '@/i18n';
 import { LoadingState, numberField, SectionHeader, TextField, useDashboard, type Settings } from './shared';
 import { useToast } from './toast';
 
@@ -29,6 +30,7 @@ function Row({ label, description, children }: { label: string; description?: st
 
 export function SettingsSection() {
   const { settings: saved, plan, storeCategories, storeCatalogVersion, reload } = useDashboard();
+  const { t, formatDate, locales, setLocale } = useI18n();
   const toast = useToast();
   const [draft, setDraft] = useState<Settings | null>(saved);
   const [saving, setSaving] = useState(false);
@@ -66,36 +68,36 @@ export function SettingsSection() {
     try {
       await post<{ settings: Settings }>('/api/rentals/settings', draft);
       await reload();
-      toast('Settings saved.');
+      toast(t('settings.toast_saved'));
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Settings were not saved.', 'error');
+      toast(error instanceof Error ? error.message : t('settings.toast_save_failed'), 'error');
     } finally {
       setSaving(false);
     }
   }
 
   const limits = [
-    plan.maxItems === null ? 'Unlimited items' : `Up to ${plan.maxItems} items`,
-    plan.maxBookingsPerMonth === null ? 'Unlimited bookings' : `${plan.maxBookingsPerMonth} bookings a month`,
-    plan.manualApproval ? 'Manual approval' : null,
-    plan.perItemRules ? 'Per-item rules' : null,
-    plan.calendar ? 'Calendar' : null,
+    plan.maxItems === null ? t('settings.limit_unlimited_items') : t('settings.limit_items', { count: plan.maxItems }),
+    plan.maxBookingsPerMonth === null ? t('settings.limit_unlimited_bookings') : t('settings.limit_bookings', { count: plan.maxBookingsPerMonth }),
+    plan.manualApproval ? t('settings.limit_manual_approval') : null,
+    plan.perItemRules ? t('settings.limit_item_rules') : null,
+    plan.calendar ? t('settings.limit_calendar') : null,
   ].filter(Boolean);
 
   return (
     <div className="flex flex-col gap-4 pb-20">
-      <SectionHeader title="Settings" description="These apply to every item unless an item overrides them." />
+      <SectionHeader title={t('settings.title')} description={t('settings.description')} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
-              <CardTitle>Store</CardTitle>
-              <CardDescription>Used for prices, rental categories, and for deciding what "today" means.</CardDescription>
+              <CardTitle>{t('settings.store_title')}</CardTitle>
+              <CardDescription>{t('settings.store_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <Label>Time zone</Label>
+                <Label>{t('settings.timezone')}</Label>
                 <Select value={draft.timezone} onValueChange={(value) => set('timezone', value)}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent className="max-h-72">
@@ -104,38 +106,59 @@ export function SettingsSection() {
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Currency</Label>
+                <Label>{t('settings.currency')}</Label>
                 <p className="flex h-9 items-center text-sm font-medium">{draft.currency}</p>
-                <p className="text-xs text-muted-foreground">Your site's currency, which checkout charges in. Change it in your site's General Info.</p>
+                <p className="text-xs text-muted-foreground">{t('settings.currency_desc')}</p>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <Label>{t('settings.language_label')}</Label>
+                <Select
+                  value={draft.language || 'en'}
+                  onValueChange={(value) => {
+                    set('language', value);
+                    setLocale(value as any);
+                  }}
+                >
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {locales.map((loc) => (
+                      <SelectItem key={loc.code} value={loc.code}>
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden="true">{loc.flag}</span>
+                          <span>{loc.nativeName} ({loc.name})</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{t('settings.language_desc')}</p>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Wix Stores rental category</CardTitle>
-              <CardDescription>
-                Products in this category can show the rental booking plugin. Product-level overrides are managed in Items.
-              </CardDescription>
+              <CardTitle>{t('settings.category_card_title')}</CardTitle>
+              <CardDescription>{t('settings.category_card_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {storeCatalogVersion === 'STORES_NOT_INSTALLED' ? (
-                <p className="text-sm text-muted-foreground">Wix Stores is not installed or its catalog cannot be read.</p>
+                <p className="text-sm text-muted-foreground">{t('settings.stores_not_installed')}</p>
               ) : (
                 <>
                   <div className="flex flex-col gap-1.5">
-                    <Label>Rental category</Label>
+                    <Label>{t('settings.rental_category_label')}</Label>
                     <Select value={draft.storeCategoryId || '__none'} onValueChange={setStoreCategory}>
-                      <SelectTrigger className="w-full"><SelectValue placeholder="Choose a category" /></SelectTrigger>
+                      <SelectTrigger className="w-full"><SelectValue placeholder={t('settings.category_placeholder')} /></SelectTrigger>
                       <SelectContent className="max-h-72">
-                        <SelectItem value="__none">No category selected</SelectItem>
+                        <SelectItem value="__none">{t('settings.no_category_selected')}</SelectItem>
                         {storeCategories.map((category) => (
                           <SelectItem key={`${category.version}:${category.id}`} value={category.id}>{category.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  {!draft.storeCategoryId ? <p className="text-xs text-muted-foreground">Only products explicitly enabled in Items will show rental controls.</p> : null}
+                  {!draft.storeCategoryId ? <p className="text-xs text-muted-foreground">{t('settings.category_hint')}</p> : null}
                 </>
               )}
             </CardContent>
@@ -143,48 +166,48 @@ export function SettingsSection() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Pickup and return</CardTitle>
-              <CardDescription>When renters collect and bring items back.</CardDescription>
+              <CardTitle>{t('settings.pickup_return_title')}</CardTitle>
+              <CardDescription>{t('settings.pickup_return_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextField id="pickup-hour" label="Pickup time" type="time" value={draft.pickupHour} onChange={(event) => set('pickupHour', event.target.value)} />
-                <TextField id="return-hour" label="Return time" type="time" value={draft.returnHour} onChange={(event) => set('returnHour', event.target.value)} hint="Rentals not back by this time show as overdue." />
+                <TextField id="pickup-hour" label={t('settings.pickup_time')} type="time" value={draft.pickupHour} onChange={(event) => set('pickupHour', event.target.value)} />
+                <TextField id="return-hour" label={t('settings.return_time')} type="time" value={draft.returnHour} onChange={(event) => set('returnHour', event.target.value)} hint={t('settings.return_time_hint')} />
               </div>
-              <Row label="Charge for the return day" description="Off: a Friday–Sunday rental is 2 days. On: it's 3.">
-                <Switch checked={draft.countReturnDay} onCheckedChange={(checked) => set('countReturnDay', checked)} aria-label="Charge for the return day" />
+              <Row label={t('settings.count_return_day')} description={t('settings.count_return_day_desc')}>
+                <Switch checked={draft.countReturnDay} onCheckedChange={(checked) => set('countReturnDay', checked)} aria-label={t('settings.count_return_day')} />
               </Row>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Default rental rules</CardTitle>
-              <CardDescription>New items start with these values.</CardDescription>
+              <CardTitle>{t('settings.rules_title')}</CardTitle>
+              <CardDescription>{t('settings.rules_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
-              <TextField id="min-days" label="Minimum days" {...num('defaultMinDays', 1)} />
-              <TextField id="max-days" label="Maximum days" {...num('defaultMaxDays', 1)} />
-              <TextField id="buffer-days" label="Buffer days" hint="Days kept free between rentals for cleaning or repairs." {...num('defaultBufferDays')} />
-              <TextField id="lead-days" label="Lead days" hint="How much notice you need before a pickup." {...num('defaultLeadDays')} />
+              <TextField id="min-days" label={t('settings.min_days')} {...num('defaultMinDays', 1)} />
+              <TextField id="max-days" label={t('settings.max_days')} {...num('defaultMaxDays', 1)} />
+              <TextField id="buffer-days" label={t('settings.buffer_days')} hint={t('settings.buffer_days_hint')} {...num('defaultBufferDays')} />
+              <TextField id="lead-days" label={t('settings.lead_days')} hint={t('settings.lead_days_hint')} {...num('defaultLeadDays')} />
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Confirming bookings</CardTitle>
-              <CardDescription>Choose whether paid bookings are confirmed automatically.</CardDescription>
+              <CardTitle>{t('settings.confirming_title')}</CardTitle>
+              <CardDescription>{t('settings.confirming_desc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Row
-                label="Approve each booking myself"
-                description={plan.manualApproval ? 'New bookings wait in Bookings until you approve them.' : 'Available on the Pro and Business plans.'}
+                label={t('settings.manual_approval')}
+                description={plan.manualApproval ? t('settings.manual_approval_enabled_desc') : t('settings.manual_approval_disabled_desc')}
               >
                 <Switch
                   checked={draft.approvalMode === 'manual'}
                   disabled={!plan.manualApproval}
                   onCheckedChange={(checked) => set('approvalMode', checked ? 'manual' : 'auto')}
-                  aria-label="Approve each booking myself"
+                  aria-label={t('settings.manual_approval')}
                 />
               </Row>
             </CardContent>
@@ -192,27 +215,27 @@ export function SettingsSection() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Email notifications</CardTitle>
-              <CardDescription>Choose which booking updates are emailed. Changes save with your other settings.</CardDescription>
+              <CardTitle>{t('settings.notifications_title')}</CardTitle>
+              <CardDescription>{t('settings.notifications_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <Row label="Email me about new paid bookings" description="Includes bookings waiting for your approval.">
-                <Switch checked={draft.emailOwnerNewBookings} onCheckedChange={(checked) => set('emailOwnerNewBookings', checked)} aria-label="Email me about new paid bookings" />
+              <Row label={t('settings.email_owner_new')} description={t('settings.email_owner_new_desc')}>
+                <Switch checked={draft.emailOwnerNewBookings} onCheckedChange={(checked) => set('emailOwnerNewBookings', checked)} aria-label={t('settings.email_owner_new')} />
               </Row>
-              <Row label="Email me about renter change or cancellation requests">
-                <Switch checked={draft.emailOwnerRenterRequests} onCheckedChange={(checked) => set('emailOwnerRenterRequests', checked)} aria-label="Email me about renter requests" />
+              <Row label={t('settings.email_owner_requests')}>
+                <Switch checked={draft.emailOwnerRenterRequests} onCheckedChange={(checked) => set('emailOwnerRenterRequests', checked)} aria-label={t('settings.email_owner_requests')} />
               </Row>
-              <Row label="Email me when a paid booking needs a refund" description="For example, when a payment arrives after its hold expired.">
-                <Switch checked={draft.emailOwnerRefundAlerts} onCheckedChange={(checked) => set('emailOwnerRefundAlerts', checked)} aria-label="Email me about bookings that need a refund" />
+              <Row label={t('settings.email_owner_refunds')} description={t('settings.email_owner_refunds_desc')}>
+                <Switch checked={draft.emailOwnerRefundAlerts} onCheckedChange={(checked) => set('emailOwnerRefundAlerts', checked)} aria-label={t('settings.email_owner_refunds')} />
               </Row>
-              <Row label="Email renters about request decisions" description="When you approve or decline a date change or cancellation request.">
-                <Switch checked={draft.emailRentersRequestUpdates} onCheckedChange={(checked) => set('emailRentersRequestUpdates', checked)} aria-label="Email renters about request decisions" />
+              <Row label={t('settings.email_renters_requests')} description={t('settings.email_renters_requests_desc')}>
+                <Switch checked={draft.emailRentersRequestUpdates} onCheckedChange={(checked) => set('emailRentersRequestUpdates', checked)} aria-label={t('settings.email_renters_requests')} />
               </Row>
-              <Row label="Email renters about booking status changes" description="Approval, cancellation, pickup, return, and manually created bookings.">
-                <Switch checked={draft.emailRentersBookingUpdates} onCheckedChange={(checked) => set('emailRentersBookingUpdates', checked)} aria-label="Email renters about booking status changes" />
+              <Row label={t('settings.email_renters_bookings')} description={t('settings.email_renters_bookings_desc')}>
+                <Switch checked={draft.emailRentersBookingUpdates} onCheckedChange={(checked) => set('emailRentersBookingUpdates', checked)} aria-label={t('settings.email_renters_bookings')} />
               </Row>
-              <Row label="Email renters when you settle their deposit">
-                <Switch checked={draft.emailRentersDepositUpdates} onCheckedChange={(checked) => set('emailRentersDepositUpdates', checked)} aria-label="Email renters about deposit settlement" />
+              <Row label={t('settings.email_renters_deposits')}>
+                <Switch checked={draft.emailRentersDepositUpdates} onCheckedChange={(checked) => set('emailRentersDepositUpdates', checked)} aria-label={t('settings.email_renters_deposits')} />
               </Row>
             </CardContent>
           </Card>
@@ -220,7 +243,7 @@ export function SettingsSection() {
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Crown className="size-4 text-amber-500" />Your plan</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Crown className="size-4 text-amber-500" />{t('settings.plan_title')}</CardTitle>
             <CardDescription><Badge variant="secondary">{plan.label}</Badge></CardDescription>
           </CardHeader>
           <CardContent>
@@ -231,17 +254,21 @@ export function SettingsSection() {
             </ul>
             {plan.trialActive ? (
               <p className="mt-4 text-xs text-muted-foreground">
-                Your Business trial is active. Subscribe before it ends to keep these limits.
+                {t('settings.trial_active_note')}
               </p>
             ) : plan.trialEnded ? (
               <p className="mt-4 text-xs text-muted-foreground">
-                Your Business trial ended{plan.trialEndDate ? ` on ${new Date(plan.trialEndDate).toLocaleDateString()}` : ''}. Items added during it are kept, but only your oldest item takes new bookings.
+                {t('settings.trial_ended_note', {
+                  endDate: plan.trialEndDate
+                    ? t('settings.trial_ended_on', { date: formatDate(plan.trialEndDate, { year: 'numeric', month: 'numeric', day: 'numeric' }) })
+                    : '',
+                })}
               </p>
             ) : null}
             {plan.upgradeUrl && !plan.trialActive && (plan.trialAvailable || plan.trialEnded || plan.tier !== 'pro') ? (
               <Button asChild className="mt-4 w-full">
                 <a href={plan.upgradeUrl} target="_blank" rel="noreferrer">
-                  {plan.trialAvailable ? 'Start free trial' : 'Upgrade plan'}
+                  {plan.trialAvailable ? t('action.start_free_trial') : t('action.upgrade_plan')}
                 </a>
               </Button>
             ) : null}
@@ -252,10 +279,10 @@ export function SettingsSection() {
       {dirty ? (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur animate-in slide-in-from-bottom-4">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-            <span className="text-sm text-muted-foreground">You have unsaved changes.</span>
+            <span className="text-sm text-muted-foreground">{t('common.unsaved_changes')}</span>
             <div className="flex gap-2">
-              <Button variant="outline" disabled={saving} onClick={() => setDraft(saved)}>Discard</Button>
-              <Button loading={saving} disabled={saving} onClick={() => void save()}>Save changes</Button>
+              <Button variant="outline" disabled={saving} onClick={() => setDraft(saved)}>{t('common.discard')}</Button>
+              <Button loading={saving} disabled={saving} onClick={() => void save()}>{t('common.save_changes')}</Button>
             </div>
           </div>
         </div>

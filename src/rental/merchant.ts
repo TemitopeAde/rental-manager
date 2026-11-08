@@ -128,6 +128,7 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.emailRentersRequestUpdates !== undefined) next.emailRentersRequestUpdates = patch.emailRentersRequestUpdates;
   if (patch.emailRentersBookingUpdates !== undefined) next.emailRentersBookingUpdates = patch.emailRentersBookingUpdates;
   if (patch.emailRentersDepositUpdates !== undefined) next.emailRentersDepositUpdates = patch.emailRentersDepositUpdates;
+  if (patch.language) next.language = patch.language;
   if (patch.membersAreaInstalled !== undefined) next.membersAreaInstalled = patch.membersAreaInstalled;
   if (patch.storeCategoryId !== undefined) next.storeCategoryId = patch.storeCategoryId;
   if (patch.storeCategoryName !== undefined) next.storeCategoryName = patch.storeCategoryName;

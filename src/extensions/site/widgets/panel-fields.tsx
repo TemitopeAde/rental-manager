@@ -1,5 +1,5 @@
 import { type CSSProperties, type FC, type ReactNode, useCallback, useEffect, useState } from 'react';
-import { inputs, widget } from '@wix/editor';
+import { application, inputs, widget } from '@wix/editor';
 import {
   Accordion,
   accordionItemBuilder,
@@ -16,6 +16,7 @@ import {
   Slider,
   Text,
   ToggleSwitch,
+  Tooltip,
   WixDesignSystemProvider,
 } from '@wix/design-system';
 
@@ -25,7 +26,7 @@ export type FontValue = {
 };
 
 export const headingFont: FontValue = {
-  font: '700 22px/1.25 sans-serif',
+  font: '700 22px/1.25 "helvetica-w01-roman", sans-serif',
   textDecoration: '',
 };
 
@@ -35,7 +36,7 @@ export const bodyFont: FontValue = {
 };
 
 export const buttonFont: FontValue = {
-  font: '600 16px/1.2 sans-serif',
+  font: '600 16px/1.2 "helvetica-w01-roman", sans-serif',
   textDecoration: '',
 };
 
@@ -79,6 +80,9 @@ export function appearanceStyle(values: {
   headingFont?: FontValue;
   bodyFont?: FontValue;
   buttonFont?: FontValue;
+  titleFont?: FontValue;
+  descriptionFont?: FontValue;
+  priceFont?: FontValue;
 }): CSSProperties {
   const style: CSSProperties & Partial<Record<`--${string}`, string>> = {};
   const assign = (name: `--${string}`, value: string | undefined) => {
@@ -98,6 +102,9 @@ export function appearanceStyle(values: {
   assign('--rm-body-decoration', values.bodyFont?.textDecoration);
   assign('--rm-button-font', values.buttonFont?.font);
   assign('--rm-button-decoration', values.buttonFont?.textDecoration);
+  assign('--rm-title-font', values.titleFont?.font);
+  assign('--rm-description-font', values.descriptionFont?.font);
+  assign('--rm-price-font', values.priceFont?.font);
   return style;
 }
 
@@ -257,27 +264,41 @@ const FontField: FC<{ label: string; value: FontValue; onChange: (value: FontVal
   label,
   value,
   onChange,
-}) => (
-  <SidePanel.Field>
-    <FormField label={label}>
-      <Button
-        size="small"
-        priority="secondary"
-        fullWidth
-        style={{ font: value.font, textDecoration: value.textDecoration || undefined }}
-        onClick={() => inputs.selectFont(value, {
-          onChange: (next) => onChange({
-            font: next.font,
-            textDecoration: next.textDecoration || '',
-          }),
-        })}
-      >
-        <span aria-hidden="true">Aa</span>
-        <span> · {fontFamilyName(value.font)}</span>
-      </Button>
-    </FormField>
-  </SidePanel.Field>
-);
+}) => {
+  const openFontPicker = () => inputs.selectFont(value, {
+    onChange: (next) => onChange({
+      font: next.font,
+      textDecoration: next.textDecoration || '',
+    }),
+  });
+
+  return (
+    <SidePanel.Field>
+      <FormField label={label}>
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={`Choose ${label.toLowerCase()} font`}
+          onClick={openFontPicker}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openFontPicker();
+            }
+          }}
+          style={{
+            display: 'block',
+            cursor: 'pointer',
+            font: value.font,
+            textDecoration: value.textDecoration || undefined,
+          }}
+        >
+          {fontFamilyName(value.font)}
+        </span>
+      </FormField>
+    </SidePanel.Field>
+  );
+};
 
 export const PanelNote: FC<{ children: ReactNode }> = ({ children }) => (
   <SidePanel.Field>
@@ -301,40 +322,40 @@ export const SettingsAccordion: FC<{
 );
 
 export function PanelShell({ title, children }: { title: string; children: ReactNode }) {
+  const [upgradeUrl, setUpgradeUrl] = useState('');
+
+  useEffect(() => {
+    application.getAppInstance()
+      .then((instance: { instanceId?: string; instance?: { instanceId?: string } }) => {
+        const instanceId = instance.instanceId || instance.instance?.instanceId;
+        if (instanceId) {
+          setUpgradeUrl(`https://www.wix.com/apps/upgrade/3775e684-24cc-431a-9049-066df8aa81fd?appInstanceId=${encodeURIComponent(instanceId)}`);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
   return (
     <WixDesignSystemProvider>
       <SidePanel width="300" height="100vh">
-        <SidePanel.Header title={title} />
+        <SidePanel.Header title={title}>
+          <Tooltip content="Configure rental settings for this panel." placement="bottom">
+            <span aria-label="Configure Rentals" role="img" style={{ cursor: 'help', fontSize: 18 }}>ⓘ</span>
+          </Tooltip>
+        </SidePanel.Header>
         <SidePanel.Content noPadding>
           {children}
+          {upgradeUrl ? (
+            <Box padding="SP3">
+              <Button fullWidth priority="primary" onClick={() => window.open(upgradeUrl, '_blank', 'noopener,noreferrer')}>
+                Upgrade plan
+              </Button>
+            </Box>
+          ) : null}
         </SidePanel.Content>
       </SidePanel>
     </WixDesignSystemProvider>
   );
 }
-
-// Theme presets applied in one click; each sets every colour prop at once.
-export const themes: Array<{ id: string; label: string; colors: Record<string, string> }> = [
-  {
-    id: 'classic',
-    label: 'Classic',
-    colors: { background: '#ffffff', card: '#ffffff', text: '#1a1a1a', heading: '#111111', accent: '#116dff', onAccent: '#ffffff', border: '#e3e3e3' },
-  },
-  {
-    id: 'warm',
-    label: 'Warm',
-    colors: { background: '#fbf7f2', card: '#ffffff', text: '#3b2f2a', heading: '#2a1f1a', accent: '#c4622d', onAccent: '#ffffff', border: '#eadfd3' },
-  },
-  {
-    id: 'forest',
-    label: 'Forest',
-    colors: { background: '#f3f6f2', card: '#ffffff', text: '#24302a', heading: '#17231c', accent: '#2f6b4f', onAccent: '#ffffff', border: '#d9e2db' },
-  },
-  {
-    id: 'night',
-    label: 'Night',
-    colors: { background: '#121417', card: '#1c1f24', text: '#e6e8eb', heading: '#ffffff', accent: '#7aa7ff', onAccent: '#0d1117', border: '#30353d' },
-  },
-];
 
 export { ColorField, FontField };

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/dashboard/client';
+import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 
 export type BookingStatus = 'hold' | 'pending' | 'confirmed' | 'active' | 'returned' | 'cancelled' | 'overdue' | 'expired';
@@ -70,6 +71,7 @@ export interface Settings {
   emailRentersBookingUpdates: boolean;
   emailRentersDepositUpdates: boolean;
   currency: string;
+  language?: string;
   storeCategoryId: string;
   storeCategoryName: string;
   storeCategoryVersion?: 'V1_CATALOG' | 'V3_CATALOG';
@@ -114,6 +116,7 @@ interface DashboardData {
 const DataContext = createContext<DashboardData | null>(null);
 
 export function DashboardDataProvider({ children }: { children: ReactNode }) {
+  const { t, formatMoney: i18nMoney, setLocale } = useI18n();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
@@ -128,6 +131,9 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
       api<{ version: DashboardData['storeCatalogVersion']; categories: StoreCategoryRow[] }>('/api/rentals/store-categories'),
     ]);
     setSettings(config.settings);
+    if (config.settings?.language) {
+      setLocale(config.settings.language as any);
+    }
     setPlan(config.plan);
     setItems(catalog.items);
     setBookableIds(catalog.bookableIds ? new Set(catalog.bookableIds) : null);
@@ -147,8 +153,8 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
     canBook: (id) => bookableIds === null || bookableIds.has(id),
     storeCategories,
     storeCatalogVersion,
-    itemName: (id) => items.find((item) => item._id === id)?.name ?? 'Unknown item',
-    money: (amount) => formatMoney(amount, currency),
+    itemName: (id) => items.find((item) => item._id === id)?.name ?? t('common.unknown_item'),
+    money: (amount) => i18nMoney(amount, currency),
     reload,
   };
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
@@ -182,10 +188,10 @@ export function useResource<T>(load: () => Promise<T>) {
 
 // ---------- Formatting ----------
 
-export function formatMoney(amount: number, currency?: string): string {
-  if (!currency) return amount.toLocaleString();
+export function formatMoney(amount: number, currency?: string, locale?: string): string {
+  if (!currency) return amount.toLocaleString(locale);
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount);
   } catch {
     return `${amount} ${currency}`;
   }
@@ -200,13 +206,13 @@ export function isoDay(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function formatDay(iso: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }): string {
+export function formatDay(iso: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }, locale?: string): string {
   if (!iso) return '—';
-  return parseDay(iso).toLocaleDateString(undefined, options);
+  return parseDay(iso).toLocaleDateString(locale, options);
 }
 
-export function formatRange(start: string, end: string): string {
-  return `${formatDay(start)} – ${formatDay(end)}`;
+export function formatRange(start: string, end: string, locale?: string): string {
+  return `${formatDay(start, undefined, locale)} – ${formatDay(end, undefined, locale)}`;
 }
 
 // ---------- Status ----------
@@ -224,25 +230,27 @@ const statusStyle: Record<BookingStatus, { label: string; className: string }> =
 
 export const statusOrder: BookingStatus[] = ['pending', 'confirmed', 'active', 'overdue', 'returned', 'cancelled', 'hold', 'expired'];
 
-export function statusLabel(status: BookingStatus): string {
-  return statusStyle[status]?.label ?? status;
+export function statusLabel(status: BookingStatus, t?: (key: string) => string): string {
+  return t ? t(`status.${status}`) : (statusStyle[status]?.label ?? status);
 }
 
 export function StatusBadge({ status, refundNeeded }: { status: BookingStatus; refundNeeded?: boolean }) {
+  const { t } = useI18n();
   const style = statusStyle[status] ?? statusStyle.expired;
+  const label = t(`status.${status}`);
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Badge variant="secondary" className={cn('border-0 font-medium', style.className)}>{style.label}</Badge>
-      {refundNeeded ? <Badge variant="destructive">Refund due</Badge> : null}
+      <Badge variant="secondary" className={cn('border-0 font-medium', style.className)}>{label}</Badge>
+      {refundNeeded ? <Badge variant="destructive">{t('status.refund_due')}</Badge> : null}
     </span>
   );
 }
 
 // The next step a booking can take from its current status.
-export function nextAction(status: BookingStatus): { action: string; label: string } | null {
-  if (status === 'pending') return { action: 'approve', label: 'Approve' };
-  if (status === 'confirmed') return { action: 'pickup', label: 'Mark picked up' };
-  if (status === 'active' || status === 'overdue') return { action: 'returned', label: 'Mark returned' };
+export function nextAction(status: BookingStatus, t?: (key: string) => string): { action: string; label: string } | null {
+  if (status === 'pending') return { action: 'approve', label: t ? t('action.approve') : 'Approve' };
+  if (status === 'confirmed') return { action: 'pickup', label: t ? t('action.pickup') : 'Mark picked up' };
+  if (status === 'active' || status === 'overdue') return { action: 'returned', label: t ? t('action.returned') : 'Mark returned' };
   return null;
 }
 
@@ -253,13 +261,14 @@ export function canCancel(status: BookingStatus): boolean {
 // ---------- Layout pieces ----------
 
 export function ErrorState({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
+  const { t } = useI18n();
   return (
     <Alert variant="destructive">
       <AlertCircle />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center gap-3">
         <span>{message}</span>
-        {onRetry ? <Button size="sm" variant="outline" onClick={onRetry}>Try again</Button> : null}
+        {onRetry ? <Button size="sm" variant="outline" onClick={onRetry}>{t('common.try_again')}</Button> : null}
       </AlertDescription>
     </Alert>
   );
@@ -372,6 +381,7 @@ export function TextField({ id, label, hint, tip, error, className, ...props }: 
   tip?: string;
   error?: string;
 }) {
+  const { t } = useI18n();
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       <div className="flex items-center gap-1">
@@ -379,7 +389,7 @@ export function TextField({ id, label, hint, tip, error, className, ...props }: 
         {tip ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`About ${label}`}>
+              <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={t('common.about', { label })}>
                 <Info className="size-3.5" />
               </button>
             </TooltipTrigger>

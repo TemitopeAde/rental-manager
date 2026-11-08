@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Box, Button, SidePanel } from '@wix/design-system';
+import { SidePanel } from '@wix/design-system';
 import {
   bodyFont,
   buttonFont,
@@ -7,8 +7,6 @@ import {
   FontField,
   headingFont,
   parseFont,
-  SliderSetting,
-  themes,
 } from './panel-fields';
 
 // Prop names and defaults shared by every rental widget's Design settings.
@@ -24,18 +22,21 @@ export const designDefaults = {
   'heading-font': '',
   'body-font': '',
   'button-font': '',
+  'title-font': '',
+  'description-font': '',
+  'price-font': '',
 };
 
 type DesignKey = keyof typeof designDefaults;
 
-const colorProps: Array<{ key: DesignKey; theme: string; label: string }> = [
-  { key: 'background-color', theme: 'background', label: 'Background' },
-  { key: 'card-color', theme: 'card', label: 'Card' },
-  { key: 'text-color', theme: 'text', label: 'Text' },
-  { key: 'heading-color', theme: 'heading', label: 'Headings' },
-  { key: 'accent-color', theme: 'accent', label: 'Accent & buttons' },
-  { key: 'button-text-color', theme: 'onAccent', label: 'Button text' },
-  { key: 'border-color', theme: 'border', label: 'Borders' },
+const colorProps: Array<{ key: DesignKey; label: string }> = [
+  { key: 'background-color', label: 'Background' },
+  { key: 'card-color', label: 'Card' },
+  { key: 'text-color', label: 'Text' },
+  { key: 'heading-color', label: 'Headings' },
+  { key: 'accent-color', label: 'Accent & buttons' },
+  { key: 'button-text-color', label: 'Button text' },
+  { key: 'border-color', label: 'Borders' },
 ];
 
 export function designSections(
@@ -43,35 +44,6 @@ export function designSections(
   set: (name: DesignKey, value: string) => void,
 ): Array<{ title: string; children: ReactNode }> {
   return [
-    {
-      title: 'Theme',
-      children: (
-        <>
-          <SidePanel.Field>
-            <Box gap="SP1" style={{ flexWrap: 'wrap' }}>
-              {themes.map((theme) => (
-                <Button
-                  key={theme.id}
-                  size="tiny"
-                  priority="secondary"
-                  prefixIcon={<Swatch color={theme.colors.accent} />}
-                  onClick={() => colorProps.forEach((prop) => set(prop.key, theme.colors[prop.theme]))}
-                >
-                  {theme.label}
-                </Button>
-              ))}
-            </Box>
-          </SidePanel.Field>
-          <SliderSetting
-            label={`Corner radius · ${values['corner-radius']}px`}
-            value={Number(values['corner-radius']) || 0}
-            min={0}
-            max={28}
-            onChange={(value) => set('corner-radius', String(value))}
-          />
-        </>
-      ),
-    },
     {
       title: 'Colors',
       children: (
@@ -94,12 +66,11 @@ export function designSections(
           <FontField label="Headings" value={parseFont(values['heading-font'], headingFont)} onChange={(value) => set('heading-font', JSON.stringify(value))} />
           <FontField label="Body text" value={parseFont(values['body-font'], bodyFont)} onChange={(value) => set('body-font', JSON.stringify(value))} />
           <FontField label="Buttons" value={parseFont(values['button-font'], buttonFont)} onChange={(value) => set('button-font', JSON.stringify(value))} />
+          <FontField label="Element titles" value={parseFont(values['title-font'], headingFont)} onChange={(value) => set('title-font', JSON.stringify(value))} />
+          <FontField label="Descriptions" value={parseFont(values['description-font'], bodyFont)} onChange={(value) => set('description-font', JSON.stringify(value))} />
+          <FontField label="Prices" value={parseFont(values['price-font'], bodyFont)} onChange={(value) => set('price-font', JSON.stringify(value))} />
         </>
       ),
     },
   ];
-}
-
-function Swatch({ color }: { color: string }) {
-  return <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 999, background: color }} />;
 }

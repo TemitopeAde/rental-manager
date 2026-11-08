@@ -3,12 +3,14 @@ import { Users } from 'lucide-react';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { api, post } from '@/dashboard/client';
+import { useI18n } from '@/i18n';
 import { hasMembersAreaApp } from '@/rental/constants';
 import { useToast } from './toast';
 
 // Online bookings stay closed until the site has Wix Members Area, which My Rentals and
 // renter sign-in depend on. This checks on load and offers a one-click install.
 export function MembersAreaNotice() {
+  const { t } = useI18n();
   const toast = useToast();
   const [installed, setInstalled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,9 +29,9 @@ export function MembersAreaNotice() {
     try {
       await post('/api/rentals/members-area', {});
       setInstalled(true);
-      toast('Wix Members Area installed. Online booking is open.');
+      toast(t('members_area.toast_installed'));
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Could not install Wix Members Area.', 'error');
+      toast(error instanceof Error ? error.message : t('members_area.toast_install_failed'), 'error');
     } finally {
       setBusy(false);
     }
@@ -39,13 +41,13 @@ export function MembersAreaNotice() {
   return (
     <Alert variant="destructive">
       <Users />
-      <AlertTitle>Install Wix Members Area to take bookings</AlertTitle>
+      <AlertTitle>{t('members_area.title')}</AlertTitle>
       <AlertDescription>
-        Renters sign in to see, move and cancel their rentals, so online booking stays closed until the Members Area is on your site.
+        {t('members_area.desc')}
       </AlertDescription>
       <AlertAction>
         <Button size="sm" disabled={busy} onClick={() => void install()}>
-          {busy ? 'Installing…' : 'Install now'}
+          {busy ? t('members_area.btn_installing') : t('members_area.btn_install')}
         </Button>
       </AlertAction>
     </Alert>

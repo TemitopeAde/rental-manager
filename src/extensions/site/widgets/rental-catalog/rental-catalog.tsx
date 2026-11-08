@@ -24,13 +24,15 @@ function CatalogElement(props: {
   showRibbon?: boolean;
   showButton?: boolean;
   buttonLabel?: string;
-  detailsPage?: string;
   imageRatio?: string;
   imageHover?: string;
   textAlign?: string;
   headingFont?: string;
   bodyFont?: string;
   buttonFont?: string;
+  titleFont?: string;
+  descriptionFont?: string;
+  priceFont?: string;
 }) {
   return (
     <div
@@ -47,6 +49,9 @@ function CatalogElement(props: {
         headingFont: props.headingFont ? parseFont(props.headingFont, headingFont) : undefined,
         bodyFont: props.bodyFont ? parseFont(props.bodyFont, bodyFont) : undefined,
         buttonFont: props.buttonFont ? parseFont(props.buttonFont, buttonFont) : undefined,
+        titleFont: props.titleFont ? parseFont(props.titleFont, headingFont) : undefined,
+        descriptionFont: props.descriptionFont ? parseFont(props.descriptionFont, bodyFont) : undefined,
+        priceFont: props.priceFont ? parseFont(props.priceFont, bodyFont) : undefined,
       })}
     >
       <RentalCatalogGrid
@@ -60,7 +65,6 @@ function CatalogElement(props: {
         showRibbon={props.showRibbon}
         showButton={props.showButton}
         buttonLabel={props.buttonLabel}
-        detailsPage={props.detailsPage}
         imageRatio={props.imageRatio as ImageRatio | undefined}
         imageHover={props.imageHover as ImageHover | undefined}
         textAlign={props.textAlign === 'center' ? 'center' : 'start'}
@@ -89,12 +93,14 @@ export default reactToWebComponent(CatalogElement, React, ReactDOM, {
     showRibbon: 'boolean',
     showButton: 'boolean',
     buttonLabel: 'string',
-    detailsPage: 'string',
     imageRatio: 'string',
     imageHover: 'string',
     textAlign: 'string',
     headingFont: 'string',
     bodyFont: 'string',
     buttonFont: 'string',
+    titleFont: 'string',
+    descriptionFont: 'string',
+    priceFont: 'string',
   },
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type TouchEvent } from 'react';
 import { request } from './client';
-import { money, sizedImage } from './format';
+import { sizedImage } from './format';
+import { useSiteI18n } from './i18n';
 import { absolute, navigate, pagePath, readSlug, useSiteBase } from './links';
 import { PlaceholderIcon, type ImageRatio } from './RentalCatalogGrid';
 import { RentalBookingForm } from './RentalBookingForm';
@@ -33,7 +34,7 @@ type State =
 export function RentalDetails({
   itemSlug = '',
   catalogPage = '',
-  backLabel = 'All rentals',
+  backLabel,
   showCategory = true,
   showDescription = true,
   showWeeklyPrice = true,
@@ -42,9 +43,10 @@ export function RentalDetails({
   showThumbnails = true,
   imageRatio = 'square',
   imageSize = 'medium',
-  bookingTitle = 'Choose your dates',
-  buttonLabel = 'Rent now',
+  bookingTitle,
+  buttonLabel,
   monthsShown = 1,
+  language,
 }: {
   /** Shown when the page URL has no `?slug=` (the Editor, or a page fixed to one item). */
   itemSlug?: string;
@@ -61,10 +63,14 @@ export function RentalDetails({
   bookingTitle?: string;
   buttonLabel?: string;
   monthsShown?: number;
+  language?: string;
 }) {
   const [state, setState] = useState<State>({ status: 'loading' });
+  const [apiLanguage, setApiLanguage] = useState<string | undefined>();
   const base = useSiteBase();
   const sizeStyle = { '--rm-gallery-max': galleryWidths[imageSize] ?? galleryWidths.medium } as CSSProperties;
+
+  const { t, isRtl, money } = useSiteI18n(language || apiLanguage);
 
   useEffect(() => {
     let active = true;
@@ -77,24 +83,26 @@ export function RentalDetails({
       const key = urlSlug || itemSlug;
       if (key) {
         try {
-          const body = await request<{ item: CatalogItem; currency?: string }>(`/api/rentals/item?slug=${encodeURIComponent(key)}`);
+          const body = await request<{ item: CatalogItem; currency?: string; language?: string }>(`/api/rentals/item?slug=${encodeURIComponent(key)}`);
+          if (body.language) setApiLanguage(body.language);
           settle({ status: 'ready', item: body.item, currency: body.currency });
           return;
         } catch (error) {
           // A visitor following a stale link gets a clear message; a bad fixed slug in the
           // panel falls through to the preview below so the Editor never shows an empty box.
           if (urlSlug) {
-            settle({ status: 'missing', message: error instanceof Error ? error.message : 'This rental could not be loaded.' });
+            settle({ status: 'missing', message: error instanceof Error ? error.message : t('rental_load_error') });
             return;
           }
         }
       }
       try {
-        const body = await request<{ items: CatalogItem[]; currency?: string }>('/api/rentals/catalog');
+        const body = await request<{ items: CatalogItem[]; currency?: string; language?: string }>('/api/rentals/catalog');
+        if (body.language) setApiLanguage(body.language);
         const first = body.items[0];
         settle(first
           ? { status: 'ready', item: first, currency: body.currency }
-          : { status: 'missing', message: 'No rentals are available right now.' });
+          : { status: 'missing', message: t('empty_catalog') });
       } catch {
         settle({ status: 'ready', item: sample, currency: 'USD' });
       }
@@ -103,18 +111,24 @@ export function RentalDetails({
     return () => {
       active = false;
     };
-  }, [itemSlug]);
+  }, [itemSlug, t]);
 
+  const isDefaultBack = !backLabel || backLabel === 'All rentals';
+  const effectiveBackLabel = isDefaultBack ? t('all_rentals') : backLabel;
+  const isDefaultBookingTitle = !bookingTitle || bookingTitle === 'Choose your dates';
+  const effectiveBookingTitle = isDefaultBookingTitle ? t('choose_dates') : bookingTitle;
+  const isDefaultButton = !buttonLabel || buttonLabel === 'Rent now';
+  const effectiveButtonLabel = isDefaultButton ? t('rent_now') : buttonLabel;
   const backPath = pagePath(catalogPage);
   const back = backPath ? (
     <a className={styles.back} href={absolute(base, backPath)} onClick={(event) => navigate(event, backPath)}>
-      <span aria-hidden="true">←</span> {backLabel}
+      <span aria-hidden="true">{isRtl ? '→' : '←'}</span> {effectiveBackLabel}
     </a>
   ) : null;
 
   if (state.status === 'loading') {
     return (
-      <div className={styles.details} style={sizeStyle} aria-busy="true">
+      <div className={styles.details} style={sizeStyle} aria-busy="true" dir={isRtl ? 'rtl' : 'ltr'}>
         <div className={styles.layout}>
           <div className={styles.skeletonMedia} style={{ aspectRatio: ratios[imageRatio] }} />
           <div className={styles.info}>
@@ -129,7 +143,7 @@ export function RentalDetails({
 
   if (state.status === 'missing') {
     return (
-      <div className={styles.details} style={sizeStyle}>
+      <div className={styles.details} style={sizeStyle} dir={isRtl ? 'rtl' : 'ltr'}>
         <div className={styles.missing}>
           <p>{state.message}</p>
           {back}
@@ -140,39 +154,40 @@ export function RentalDetails({
 
   const { item, currency } = state;
   return (
-    <div className={styles.details} style={sizeStyle}>
-      {back ? <nav className={styles.breadcrumb} aria-label="Breadcrumb">{back}</nav> : null}
+    <div className={styles.details} style={sizeStyle} dir={isRtl ? 'rtl' : 'ltr'}>
+      {back ? <nav className={styles.breadcrumb} aria-label={t('breadcrumb_label')}>{back}</nav> : null}
       <div className={styles.layout}>
-        <Gallery item={item} ratio={ratios[imageRatio] ?? ratios.square} showThumbnails={showThumbnails} />
+        <Gallery item={item} ratio={ratios[imageRatio] ?? ratios.square} showThumbnails={showThumbnails} t={t} />
         <div className={styles.info}>
           {showCategory && item.category ? <p className={styles.category}>{item.category}</p> : null}
           <h1 className={styles.name}>{item.name}</h1>
           <div className={styles.prices}>
             <p className={styles.price}>
-              {money(item.dailyRate, currency)}<span className={styles.unit}> / day</span>
+              {money(item.dailyRate, currency)}<span className={styles.unit}>{t('per_day')}</span>
             </p>
             {showWeeklyPrice && item.weeklyRate > 0 ? (
               <p className={styles.priceAlt}>
-                {money(item.weeklyRate, currency)}<span className={styles.unit}> / week</span>
+                {money(item.weeklyRate, currency)}<span className={styles.unit}>{t('per_week')}</span>
               </p>
             ) : null}
           </div>
           <ul className={styles.facts}>
-            {showDeposit && item.depositAmount ? <li>{money(item.depositAmount, currency)} refundable deposit</li> : null}
-            {item.minDays && item.minDays > 1 ? <li>{item.minDays}-day minimum</li> : null}
-            {item.maxDays ? <li>Up to {item.maxDays} days</li> : null}
+            {showDeposit && item.depositAmount ? <li>{money(item.depositAmount, currency)} {t('refundable_deposit')}</li> : null}
+            {item.minDays && item.minDays > 1 ? <li>{t('min_days', { count: item.minDays })}</li> : null}
+            {item.maxDays ? <li>{t('up_to_days', { count: item.maxDays })}</li> : null}
           </ul>
           {showDescription && item.description ? <p className={styles.description}>{item.description}</p> : null}
           <RentalBookingForm
             key={item._id}
             embedded
             itemId={item._id}
-            title={bookingTitle}
-            buttonLabel={buttonLabel}
+            title={effectiveBookingTitle}
+            buttonLabel={effectiveButtonLabel}
             showDeposit={showDeposit}
             showWeeklyPrice={showWeeklyPrice}
             showQuantity={showQuantity}
             monthsShown={monthsShown}
+            language={language || apiLanguage}
           />
         </div>
       </div>
@@ -180,7 +195,17 @@ export function RentalDetails({
   );
 }
 
-function Gallery({ item, ratio, showThumbnails }: { item: CatalogItem; ratio: string; showThumbnails: boolean }) {
+function Gallery({
+  item,
+  ratio,
+  showThumbnails,
+  t,
+}: {
+  item: CatalogItem;
+  ratio: string;
+  showThumbnails: boolean;
+  t: (key: any, params?: any) => string;
+}) {
   const images = item.images ?? [];
   const [index, setIndex] = useState(0);
   const count = images.length;
@@ -221,7 +246,7 @@ function Gallery({ item, ratio, showThumbnails }: { item: CatalogItem; ratio: st
         tabIndex={count > 1 ? 0 : undefined}
         role={count > 1 ? 'region' : undefined}
         aria-roledescription={count > 1 ? 'carousel' : undefined}
-        aria-label={count > 1 ? `${item.name} images` : undefined}
+        aria-label={count > 1 ? t('images_carousel', { name: item.name }) : undefined}
         onKeyDown={onKeyDown}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
@@ -233,8 +258,8 @@ function Gallery({ item, ratio, showThumbnails }: { item: CatalogItem; ratio: st
         )}
         {count > 1 ? (
           <>
-            <button type="button" className={styles.arrow} data-side="prev" aria-label="Previous image" onClick={() => step(-1)}>‹</button>
-            <button type="button" className={styles.arrow} data-side="next" aria-label="Next image" onClick={() => step(1)}>›</button>
+            <button type="button" className={styles.arrow} data-side="prev" aria-label={t('prev_image')} onClick={() => step(-1)}>‹</button>
+            <button type="button" className={styles.arrow} data-side="next" aria-label={t('next_image')} onClick={() => step(1)}>›</button>
             <span className={styles.counter} aria-live="polite">{index + 1} / {count}</span>
           </>
         ) : null}
@@ -246,7 +271,7 @@ function Gallery({ item, ratio, showThumbnails }: { item: CatalogItem; ratio: st
               key={image.src}
               type="button"
               className={styles.thumb}
-              aria-label={`Show image ${position + 1}`}
+              aria-label={t('show_image', { number: position + 1 })}
               aria-current={position === index || undefined}
               onClick={() => setIndex(position)}
             >

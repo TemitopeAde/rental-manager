@@ -3,15 +3,16 @@ import { DayPicker, type DayButtonProps } from 'react-day-picker';
 import { CalendarRange, Lock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/dashboard/client';
+import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { BookingSheet, useBookingActions } from './bookings';
 import {
   EmptyState,
   ErrorState,
-  formatDay,
   isoDay,
   LoadingState,
   SectionHeader,
+  statusLabel,
   StatusBadge,
   useDashboard,
   useResource,
@@ -39,14 +40,15 @@ const MonthData = createContext<{
   rows: BookingRow[];
   itemName: (id: string) => string;
   onBookingClick: (id: string) => void;
-}>({ rows: [], itemName: () => '', onBookingClick: () => undefined });
+  moreBookingsText: (count: number) => string;
+}>({ rows: [], itemName: () => '', onBookingClick: () => undefined, moreBookingsText: (n) => `+${n}` });
 
 function MonthDay({ day: calendarDay, modifiers, className, ...button }: DayButtonProps) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (modifiers.focused) ref.current?.focus();
   }, [modifiers.focused]);
-  const { rows, itemName, onBookingClick } = useContext(MonthData);
+  const { rows, itemName, onBookingClick, moreBookingsText } = useContext(MonthData);
   const iso = isoDay(calendarDay.date);
   const bookings = onDay(rows, iso);
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -79,7 +81,7 @@ function MonthDay({ day: calendarDay, modifiers, className, ...button }: DayButt
             {row.startDate === iso ? '↑ ' : row.endDate === iso ? '↓ ' : ''}{itemName(row.itemId)}
           </span>
         ))}
-        {bookings.length > 2 ? <span className="px-1 text-[0.7rem] text-muted-foreground">+{bookings.length - 2} more</span> : null}
+        {bookings.length > 2 ? <span className="px-1 text-[0.7rem] text-muted-foreground">{moreBookingsText(bookings.length - 2)}</span> : null}
       </span>
     </button>
   );
@@ -87,6 +89,7 @@ function MonthDay({ day: calendarDay, modifiers, className, ...button }: DayButt
 
 export function CalendarSection() {
   const { plan, itemName } = useDashboard();
+  const { t, formatDay, formatRange, formatDate } = useI18n();
   const { data, error, refresh } = useResource(() => api<{ bookings: BookingRow[] }>('/api/rentals/bookings'));
   const { act, busy } = useBookingActions(refresh);
   const [day, setDay] = useState<Date>(new Date());
@@ -94,12 +97,12 @@ export function CalendarSection() {
 
   if (plan && !plan.calendar) {
     return (
-      <EmptyState icon={Lock} title="The calendar is on the Business plan">
-        Upgrade to see every rental on one month view, with pickups and returns for any day.
+      <EmptyState icon={Lock} title={t('calendar.business_lock_title')}>
+        {t('calendar.business_lock_desc')}
       </EmptyState>
     );
   }
-  if (error) return <ErrorState title="Could not load the calendar" message={error} onRetry={() => void refresh()} />;
+  if (error) return <ErrorState title={t('calendar.error_title')} message={error} onRetry={() => void refresh()} />;
   if (!data || !plan) return <LoadingState rows={6} />;
 
   const rows = data.bookings.filter((row) => !hidden.includes(row.status));
@@ -130,85 +133,83 @@ export function CalendarSection() {
   );
 
   return (
-    <MonthData.Provider value={{ rows, itemName, onBookingClick: setOpenId }}>
-    <div className="flex flex-col gap-4">
-      <SectionHeader title="Calendar" description="Every rental on one month. Pick a day to see who's coming and going." />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <Card className="py-4">
-          <CardContent className="px-3 sm:px-4">
-            <DayPicker
-              mode="single"
-              required
-              selected={day}
-              onSelect={setDay}
-              showOutsideDays
-              fixedWeeks
-              components={{ DayButton: MonthDay }}
-              classNames={{
-                root: 'relative w-full',
-                months: 'w-full',
-                month: 'flex w-full flex-col gap-3',
-                month_caption: 'flex h-8 items-center px-1',
-                caption_label: 'text-base font-semibold',
-                nav: 'absolute top-0 right-0 flex gap-1',
-                button_previous: 'grid size-8 place-items-center rounded-md border bg-background hover:bg-muted disabled:opacity-40',
-                button_next: 'grid size-8 place-items-center rounded-md border bg-background hover:bg-muted disabled:opacity-40',
-                chevron: 'size-4 fill-current',
-                month_grid: 'w-full table-fixed border-separate border-spacing-1',
-                weekdays: '',
-                weekday: 'pb-1 text-xs font-medium text-muted-foreground',
-                week: '',
-                day: 'p-0 align-top',
-                day_button: '',
-                today: '',
-                outside: '',
-                selected: '',
-              }}
-            />
-            <div className="mt-3 flex flex-wrap gap-3 px-1 text-xs text-muted-foreground">
-              {(['pending', 'confirmed', 'active', 'overdue', 'returned'] as const).map((status) => (
-                <span key={status} className="inline-flex items-center gap-1.5">
-                  <span className={cn('size-2.5 rounded-sm', chipTone[status])} />
-                  <StatusLabel status={status} />
-                </span>
-              ))}
-              <span>↑ pickup · ↓ return</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="h-fit xl:sticky xl:top-4">
-          <CardHeader>
-            <CardTitle>{day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</CardTitle>
-            <CardDescription>{dayRows.length === 0 ? 'Nothing on this day.' : `${dayRows.length} ${dayRows.length === 1 ? 'rental' : 'rentals'}`}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {dayRows.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 rounded-lg bg-muted/50 py-8 text-center text-sm text-muted-foreground">
-                <CalendarRange className="size-5" />
-                All items are free.
+    <MonthData.Provider value={{
+      rows,
+      itemName,
+      onBookingClick: setOpenId,
+      moreBookingsText: (count: number) => t('calendar.more_bookings', { count }),
+    }}>
+      <div className="flex flex-col gap-4">
+        <SectionHeader title={t('calendar.title')} description={t('calendar.description')} />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <Card className="py-4">
+            <CardContent className="px-3 sm:px-4">
+              <DayPicker
+                mode="single"
+                required
+                selected={day}
+                onSelect={setDay}
+                showOutsideDays
+                fixedWeeks
+                components={{ DayButton: MonthDay }}
+                classNames={{
+                  root: 'relative w-full',
+                  months: 'w-full',
+                  month: 'flex w-full flex-col gap-3',
+                  month_caption: 'flex h-8 items-center px-1',
+                  caption_label: 'text-base font-semibold',
+                  nav: 'absolute top-0 right-0 flex gap-1',
+                  button_previous: 'grid size-8 place-items-center rounded-md border bg-background hover:bg-muted disabled:opacity-40',
+                  button_next: 'grid size-8 place-items-center rounded-md border bg-background hover:bg-muted disabled:opacity-40',
+                  chevron: 'size-4 fill-current',
+                  month_grid: 'w-full table-fixed border-separate border-spacing-1',
+                  weekdays: '',
+                  weekday: 'pb-1 text-xs font-medium text-muted-foreground',
+                  week: '',
+                  day: 'p-0 align-top',
+                  day_button: '',
+                  today: '',
+                  outside: '',
+                  selected: '',
+                }}
+              />
+              <div className="mt-3 flex flex-wrap gap-3 px-1 text-xs text-muted-foreground">
+                {(['pending', 'confirmed', 'active', 'overdue', 'returned'] as const).map((status) => (
+                  <span key={status} className="inline-flex items-center gap-1.5">
+                    <span className={cn('size-2.5 rounded-sm', chipTone[status])} />
+                    <span>{statusLabel(status, t)}</span>
+                  </span>
+                ))}
+                <span>{t('calendar.legend_pickup_return')}</span>
               </div>
-            ) : null}
-            {group('Pickups', pickups)}
-            {group('Returns', returns)}
-            {group('Out on rent', ongoing)}
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
 
-      <BookingSheet key={selected?._id} booking={selected} onClose={() => setOpenId(null)} act={act} busy={busy} />
-    </div>
+          <Card className="h-fit xl:sticky xl:top-4">
+            <CardHeader>
+              <CardTitle>{formatDate(day, { weekday: 'long', month: 'long', day: 'numeric' })}</CardTitle>
+              <CardDescription>
+                {dayRows.length === 0
+                  ? t('calendar.nothing_on_day')
+                  : `${dayRows.length} ${dayRows.length === 1 ? t('calendar.rental_singular') : t('calendar.rental_plural')}`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {dayRows.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-lg bg-muted/50 py-8 text-center text-sm text-muted-foreground">
+                  <CalendarRange className="size-5" />
+                  {t('calendar.all_items_free')}
+                </div>
+              ) : null}
+              {group(t('calendar.pickups'), pickups)}
+              {group(t('calendar.returns'), returns)}
+              {group(t('calendar.ongoing'), ongoing)}
+            </CardContent>
+          </Card>
+        </div>
+
+        <BookingSheet key={selected?._id} booking={selected} onClose={() => setOpenId(null)} act={act} busy={busy} />
+      </div>
     </MonthData.Provider>
   );
-}
-
-function StatusLabel({ status }: { status: BookingStatus }) {
-  const labels: Partial<Record<BookingStatus, string>> = {
-    pending: 'Needs approval',
-    confirmed: 'Confirmed',
-    active: 'Out on rent',
-    overdue: 'Overdue',
-    returned: 'Returned',
-  };
-  return <>{labels[status]}</>;
 }

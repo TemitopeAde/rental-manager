@@ -28,7 +28,7 @@
 .heading {
   margin: 0;
   color: var(--rm-heading-color, inherit);
-  font: var(--rm-heading-font, var(--wix-font-Heading-S, 700 22px/1.25 sans-serif));
+  font: var(--rm-title-font, var(--rm-heading-font, 700 22px/1.25 "helvetica-w01-roman", sans-serif));
   text-decoration: var(--rm-heading-decoration, none);
 }
 
@@ -37,6 +37,8 @@
   margin: 0;
   color: var(--rm-muted);
 }
+
+.lede { font: var(--rm-description-font, inherit); }
 
 .group {
   display: flex;
@@ -208,7 +210,7 @@
   min-block-size: 2.6rem;
   padding-inline: 1.15rem;
   border-radius: var(--rm-radius-value);
-  font: var(--rm-button-font, var(--wix-font-Body-M, 600 15px/1.2 sans-serif));
+  font: var(--rm-button-font, 600 15px/1.2 "helvetica-w01-roman", sans-serif);
   text-decoration: var(--rm-button-decoration, none);
   cursor: pointer;
   transition: filter 0.15s ease, background-color 0.15s ease;

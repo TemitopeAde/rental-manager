@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Toaster, toast } from 'sonner';
 import { request } from './client';
+import { useSiteI18n } from './i18n';
 import { RentalBookingForm, type BookingNotification } from './RentalBookingForm';
 import styles from './rental.module.css';
 import type { CatalogItem } from './types';
@@ -24,9 +25,9 @@ function parseFont(raw: string | undefined, fallback: FontValue): FontValue {
 }
 
 function appearanceStyle(appearance: StoreRentalAppearance): CSSProperties {
-  const heading = parseFont(appearance.headingFont, { font: '700 22px/1.25 sans-serif', textDecoration: '' });
+  const heading = parseFont(appearance.headingFont, { font: '700 22px/1.25 "helvetica-w01-roman", sans-serif', textDecoration: '' });
   const body = parseFont(appearance.bodyFont, { font: '400 16px/1.5 "helvetica-w01-roman", sans-serif', textDecoration: '' });
-  const button = parseFont(appearance.buttonFont, { font: '600 16px/1.2 sans-serif', textDecoration: '' });
+  const button = parseFont(appearance.buttonFont, { font: '600 16px/1.2 "helvetica-w01-roman", sans-serif', textDecoration: '' });
   const style: CSSProperties & Partial<Record<`--${string}`, string>> = {};
   const assign = (name: `--${string}`, value: string | undefined) => { if (value) style[name] = value; };
   assign('--rm-background', appearance.backgroundColor);
@@ -62,23 +63,27 @@ export interface StoreRentalAppearance {
 
 export function StoreRentalEmbed({ productId, appearance }: { productId: string; appearance?: StoreRentalAppearance }) {
   const [item, setItem] = useState<CatalogItem | null>(null);
+  const [language, setLanguage] = useState<string | undefined>();
   const [message, setMessage] = useState('');
+
+  const { t, isRtl } = useSiteI18n(language);
 
   useEffect(() => {
     let active = true;
     setItem(null);
     setMessage('');
-    request<{ eligible: boolean; item?: CatalogItem; message?: string }>(`/api/rentals/store-product?productId=${encodeURIComponent(productId)}`)
+    request<{ eligible: boolean; item?: CatalogItem; message?: string; language?: string }>(`/api/rentals/store-product?productId=${encodeURIComponent(productId)}`)
       .then((body) => {
         if (!active) return;
+        if (body.language) setLanguage(body.language);
         if (body.eligible && body.item) setItem(body.item);
-        else setMessage(body.message || 'This product is not configured as a rental.');
+        else setMessage(body.message || t('not_configured'));
       })
       .catch(() => {
-        if (active) setMessage('Rental booking is not available for this product.');
+        if (active) setMessage(t('not_available_for_product'));
       });
     return () => { active = false; };
-  }, [productId]);
+  }, [productId, t]);
 
   useEffect(() => {
     if (message) toast.error(message);
@@ -87,11 +92,11 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
   const toaster = <Toaster position="top-center" closeButton richColors />;
 
   if (message) {
-    return <div className={styles.pluginContainer}>{toaster}</div>;
+    return <div className={styles.pluginContainer} dir={isRtl ? 'rtl' : 'ltr'}>{toaster}</div>;
   }
   if (!item) {
     return (
-      <div className={`${styles.pluginContainer} ${styles.notice} ${styles.loadingState}`} aria-live="polite" aria-label="Loading rental availability">
+      <div className={`${styles.pluginContainer} ${styles.notice} ${styles.loadingState}`} dir={isRtl ? 'rtl' : 'ltr'} aria-live="polite" aria-label={t('loading_rental')}>
         {toaster}
         <svg className={styles.loadingDots} viewBox="0 0 36 12" aria-hidden="true">
           <circle className={styles.loadingDot} cx="6" cy="6" r="4" />
@@ -105,12 +110,14 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
   return (
     <div
       className={styles.pluginContainer}
+      dir={isRtl ? 'rtl' : 'ltr'}
       style={appearanceStyle(appearance ?? {})}
     >
       {toaster}
       <RentalBookingForm
         itemId={item._id}
         embedded
+        language={language}
         onNotification={({ tone, text }: BookingNotification) => {
           if (tone === 'error') toast.error(text);
           else toast.success(text);

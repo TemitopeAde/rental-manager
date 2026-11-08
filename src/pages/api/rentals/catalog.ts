@@ -14,5 +14,5 @@ export const GET: APIRoute = async ({ request }) => {
   ]);
   const allowed = await bookableItemIds({ elevate: true }, plan);
   const categories = await listCategories(allowed);
-  return json({ items: allowed ? items.filter((item) => allowed.has(item._id)) : items, categories, currency: settings.currency });
+  return json({ items: allowed ? items.filter((item) => allowed.has(item._id)) : items, categories, currency: settings.currency, language: settings.language });
 };

@@ -41,13 +41,14 @@
 .heading {
   margin: 0;
   color: var(--rm-heading-color, inherit);
-  font: var(--rm-heading-font, var(--wix-font-Heading-S, 700 22px/1.25 sans-serif));
+  font: var(--rm-title-font, var(--rm-heading-font, 700 22px/1.25 "helvetica-w01-roman", sans-serif));
   text-decoration: var(--rm-heading-decoration, none);
 }
 
 .lede {
   margin: 0;
   color: var(--rm-muted);
+  font: var(--rm-description-font, inherit);
 }
 
 .itemName {
@@ -120,6 +121,7 @@
 }
 
 .rate strong {
+  font: var(--rm-price-font, inherit);
   color: var(--rm-heading-color, inherit);
   font-size: 1.1rem;
 }
@@ -266,7 +268,7 @@
 .totalValue {
   margin: 0;
   color: var(--rm-heading-color, inherit);
-  font: var(--rm-heading-font, 700 20px/1.2 sans-serif);
+  font: var(--rm-heading-font, 700 20px/1.2 "helvetica-w01-roman", sans-serif);
 }
 
 .notice {
@@ -345,7 +347,7 @@
   border-radius: var(--rm-radius-value);
   background: var(--rm-accent, #116dff);
   color: var(--rm-on-accent, #fff);
-  font: var(--rm-button-font, var(--wix-font-Body-M, 600 16px/1.2 sans-serif));
+  font: var(--rm-button-font, 600 16px/1.2 "helvetica-w01-roman", sans-serif);
   text-decoration: var(--rm-button-decoration, none);
   cursor: pointer;
   appearance: none;
@@ -685,7 +687,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--rm-heading-color, inherit);
-  font: var(--rm-heading-font, 600 18px/1.3 sans-serif);
+  font: var(--rm-title-font, var(--rm-heading-font, 600 18px/1.3 "helvetica-w01-roman", sans-serif));
   font-size: 1rem;
   text-decoration: var(--rm-heading-decoration, none);
 }
@@ -712,6 +714,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--rm-muted);
+  font: var(--rm-description-font, inherit);
   font-size: 0.875rem;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -720,6 +723,7 @@
 .price {
   margin: 0;
   color: var(--rm-text, inherit);
+  font: var(--rm-price-font, inherit);
   font-weight: 600;
   font-size: 0.95rem;
 }
@@ -746,7 +750,7 @@
   border-radius: var(--rm-radius-value);
   background: var(--rm-accent, var(--wix-color-8, #116dff));
   color: var(--rm-on-accent, #fff);
-  font: var(--rm-button-font, 600 15px/1.2 sans-serif);
+  font: var(--rm-button-font, 600 15px/1.2 "helvetica-w01-roman", sans-serif);
   text-decoration: var(--rm-button-decoration, none);
   transition: filter 0.15s ease;
 }

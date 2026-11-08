@@ -1,4 +1,5 @@
 import { DayPicker, type DateRange, type Matcher } from 'react-day-picker';
+import type { Locale } from 'react-day-picker/locale';
 import styles from './calendar.module.css';
 
 // react-day-picker ships unstyled when its stylesheet isn't imported; these module
@@ -34,11 +35,15 @@ export function RentalCalendar({
   onChange,
   firstAvailable,
   months = 1,
+  locale,
+  dir,
 }: {
   range: DateRange | undefined;
   onChange: (range: DateRange | undefined) => void;
   firstAvailable: Date;
   months?: number;
+  locale?: Locale;
+  dir?: 'ltr' | 'rtl';
 }) {
   const disabled: Matcher[] = [{ before: firstAvailable }];
   return (
@@ -54,6 +59,8 @@ export function RentalCalendar({
       numberOfMonths={Math.min(2, Math.max(1, months))}
       showOutsideDays
       classNames={classNames}
+      locale={locale}
+      dir={dir}
     />
   );
 }

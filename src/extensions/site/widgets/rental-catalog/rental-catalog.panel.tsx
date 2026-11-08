@@ -14,7 +14,6 @@ import {
 
 const defaults = {
   title: 'Rentals',
-  'details-page': '/rental-details',
   'button-label': 'View details',
   columns: '3',
   'page-size': '12',
@@ -57,8 +56,6 @@ const Panel: FC = () => {
             children: (
               <>
                 <TextSetting label="Heading" value={values.title} placeholder="Leave empty to hide" onChange={(value) => set('title', value)} />
-                <TextSetting label="Details page URL" value={values['details-page']} placeholder="/rental-details" onChange={(value) => set('details-page', value)} />
-                <PanelNote>Add a page with the Rental Details widget and enter its URL here. Each item opens it as ?slug=item-slug.</PanelNote>
                 <TextSetting label="Button label" value={values['button-label']} onChange={(value) => set('button-label', value)} />
                 <SegmentedSetting
                   label="Show price per"

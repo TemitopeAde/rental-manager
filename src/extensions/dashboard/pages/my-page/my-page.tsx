@@ -2,6 +2,7 @@ import { useState, type FC } from 'react';
 import { CalendarDays, CalendarRange, ChartColumn, ClipboardList, Package, Settings } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { I18nProvider, LanguageSwitcher, useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import {
   AnalyticsSection,
@@ -37,6 +38,7 @@ function initialSection(): SectionId {
 
 function Shell() {
   const { plan } = useDashboard();
+  const { t, formatDate } = useI18n();
   const [active, setActive] = useState<SectionId>(initialSection);
 
   function open(id: SectionId) {
@@ -44,21 +46,28 @@ function Shell() {
     window.location.hash = id;
   }
 
-  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const today = formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' });
   const current = sections.find((section) => section.id === active) ?? sections[0];
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/30 md:flex-row">
       <aside className="border-b bg-background md:sticky md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
-        <div className="flex items-center gap-3 px-4 pt-4 pb-3 md:px-5 md:pt-6 md:pb-5">
-          <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <Package className="size-5" />
-          </span>
-          <span className="text-base font-semibold">Rentals</span>
+        <div className="flex items-center justify-between px-4 pt-4 pb-3 md:px-5 md:pt-6 md:pb-5">
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <Package className="size-5" />
+            </span>
+            <span className="text-base font-semibold">{t('common.rentals')}</span>
+          </div>
+          {/* Mobile language switch pill */}
+          <div className="w-32 md:hidden">
+            <LanguageSwitcher />
+          </div>
         </div>
+
         <nav
           className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-x-visible md:overflow-y-auto md:pb-0"
-          aria-label="Rental sections"
+          aria-label={t('common.nav_label')}
         >
           {sections.map((section) => {
             const Icon = icons[section.id];
@@ -77,25 +86,37 @@ function Shell() {
                 )}
               >
                 <Icon className="size-4" />
-                {section.label}
+                {t(`nav.${section.id}`)}
               </button>
             );
           })}
         </nav>
-        {plan ? (
-          <div className="hidden border-t px-5 py-4 md:block">
-            <Badge variant="outline">{plan.label} plan</Badge>
-          </div>
-        ) : null}
+
+        {/* Pinned/fixed sidebar footer */}
+        <div className="mt-auto hidden border-t p-4 md:flex md:flex-col md:gap-3 bg-background">
+          <LanguageSwitcher />
+          {plan ? (
+            <div className="pt-0.5">
+              <Badge variant="outline" className="w-full justify-center py-1 font-medium">
+                {t('common.plan_badge', { plan: plan.label })}
+              </Badge>
+            </div>
+          ) : null}
+        </div>
       </aside>
+
       <main className="min-w-0 flex-1">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:px-6 md:py-8">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div className="flex flex-col">
-              <h1 className="text-xl leading-tight font-semibold">{current.label}</h1>
+              <h1 className="text-xl leading-tight font-semibold">{t(`nav.${current.id}`)}</h1>
               <p className="text-sm text-muted-foreground">{today}</p>
             </div>
-            {plan ? <Badge variant="outline" className="md:hidden">{plan.label} plan</Badge> : null}
+            {plan ? (
+              <Badge variant="outline" className="md:hidden">
+                {t('common.plan_badge', { plan: plan.label })}
+              </Badge>
+            ) : null}
           </div>
           <MembersAreaNotice />
           {active === 'today' ? <TodaySection onNavigate={open} /> : null}
@@ -111,13 +132,15 @@ function Shell() {
 }
 
 const DashboardPage: FC = () => (
-  <TooltipProvider>
-    <ToastProvider>
-      <DashboardDataProvider>
-        <Shell />
-      </DashboardDataProvider>
-    </ToastProvider>
-  </TooltipProvider>
+  <I18nProvider>
+    <TooltipProvider>
+      <ToastProvider>
+        <DashboardDataProvider>
+          <Shell />
+        </DashboardDataProvider>
+      </ToastProvider>
+    </TooltipProvider>
+  </I18nProvider>
 );
 
 export default DashboardPage;

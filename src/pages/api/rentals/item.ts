@@ -14,5 +14,5 @@ export const GET: APIRoute = async ({ request }) => {
   ]);
   if (!item) return json({ message: 'This rental is no longer available.' }, 404);
   if (!(await canBookItem(item._id, { elevate: true }, plan))) return json({ message: 'This rental is not currently available for new bookings.' }, 404);
-  return json({ item, currency: settings.currency });
+  return json({ item, currency: settings.currency, language: settings.language });
 };

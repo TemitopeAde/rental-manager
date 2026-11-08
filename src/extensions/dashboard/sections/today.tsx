@@ -3,11 +3,10 @@ import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CalendarClock, Hourgla
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/dashboard/client';
+import { useI18n } from '@/i18n';
 import { BookingActionButton, BookingSheet, useBookingActions } from './bookings';
 import {
   ErrorState,
-  formatDay,
-  formatRange,
   isoDay,
   LoadingState,
   nextAction,
@@ -27,6 +26,7 @@ interface TodayBoard {
 
 export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'calendar') => void }) {
   const { itemName } = useDashboard();
+  const { t, formatDay, formatRange } = useI18n();
   const { data, error, refresh } = useResource(async () => {
     const [board, all] = await Promise.all([
       api<TodayBoard>('/api/rentals/today'),
@@ -37,7 +37,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
   const { act, busy } = useBookingActions(refresh);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  if (error) return <ErrorState title="Could not load today" message={error} onRetry={() => void refresh()} />;
+  if (error) return <ErrorState title={t('today.error_title')} message={error} onRetry={() => void refresh()} />;
   if (!data) return <LoadingState />;
 
   const { board, bookings } = data;
@@ -49,7 +49,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
   const selected = bookings.find((row) => row._id === openId) ?? null;
 
   const row = (booking: BookingRow) => {
-    const next = nextAction(booking.status);
+    const next = nextAction(booking.status, t);
     return (
       <li key={booking._id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
         <button type="button" className="flex min-w-0 flex-col text-left hover:underline" onClick={() => setOpenId(booking._id)}>
@@ -60,7 +60,17 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
         </button>
         {next ? (
           next.action === 'approve' ? (
-            <BookingActionButton reference={booking.reference} action={next.action} label={next.label} title="Approve this booking?" description="This confirms the booking and lets the renter know it is approved." act={act} busy={busy} variant="outline" size="sm" />
+            <BookingActionButton
+              reference={booking.reference}
+              action={next.action}
+              label={next.label}
+              title={t('today.approve_dialog_title')}
+              description={t('today.approve_dialog_desc')}
+              act={act}
+              busy={busy}
+              variant="outline"
+              size="sm"
+            />
           ) : (
             <Button size="sm" variant="outline" loading={busy === `${booking.reference}:${next.action}`} disabled={busy !== null} onClick={() => void act(booking.reference, next.action)}>
               {next.label}
@@ -72,24 +82,39 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
   };
 
   const lists = [
-    { title: 'Going out today', description: 'Hand these over at pickup.', icon: ArrowUpFromLine, rows: board.pickups, empty: 'No pickups today.' },
-    { title: 'Coming back today', description: 'Check these in when they arrive.', icon: ArrowDownToLine, rows: board.returns, empty: 'No returns today.' },
+    { title: t('today.pickups_title'), description: t('today.pickups_desc'), icon: ArrowUpFromLine, rows: board.pickups, empty: t('today.pickups_empty') },
+    { title: t('today.returns_title'), description: t('today.returns_desc'), icon: ArrowDownToLine, rows: board.returns, empty: t('today.returns_empty') },
   ];
 
   return (
     <div className="flex flex-col gap-5">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Pickups today" value={board.pickups.length} icon={ArrowUpFromLine} />
-        <StatCard label="Returns today" value={board.returns.length} icon={ArrowDownToLine} tone="success" />
-        <StatCard label="Overdue" value={board.overdue.length} icon={AlertTriangle} tone={board.overdue.length ? 'danger' : 'default'} hint={board.overdue.length ? 'Past their return time' : 'All on time'} />
-        <StatCard label="Awaiting approval" value={pending.length} icon={Hourglass} tone={pending.length ? 'warning' : 'default'} onClick={() => onNavigate('bookings')} hint="Open bookings" />
+        <StatCard label={t('today.stat_pickups')} value={board.pickups.length} icon={ArrowUpFromLine} />
+        <StatCard label={t('today.stat_returns')} value={board.returns.length} icon={ArrowDownToLine} tone="success" />
+        <StatCard
+          label={t('today.stat_overdue')}
+          value={board.overdue.length}
+          icon={AlertTriangle}
+          tone={board.overdue.length ? 'danger' : 'default'}
+          hint={board.overdue.length ? t('today.hint_overdue_positive') : t('today.hint_overdue_zero')}
+        />
+        <StatCard
+          label={t('today.stat_pending')}
+          value={pending.length}
+          icon={Hourglass}
+          tone={pending.length ? 'warning' : 'default'}
+          onClick={() => onNavigate('bookings')}
+          hint={t('today.hint_open_bookings')}
+        />
       </div>
 
       {board.overdue.length > 0 ? (
         <Card className="border-red-200 bg-red-50/60 dark:border-red-500/30 dark:bg-red-500/5">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-800 dark:text-red-300"><AlertTriangle className="size-4" />Overdue rentals</CardTitle>
-            <CardDescription>Contact these renters, then mark each one returned when it's back.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-red-800 dark:text-red-300">
+              <AlertTriangle className="size-4" />{t('today.overdue_title')}
+            </CardTitle>
+            <CardDescription>{t('today.overdue_desc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="divide-y divide-red-200/70 dark:divide-red-500/20">
@@ -103,7 +128,9 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
         {lists.map((list) => (
           <Card key={list.title}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><list.icon className="size-4 text-muted-foreground" />{list.title}</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <list.icon className="size-4 text-muted-foreground" />{list.title}
+              </CardTitle>
               <CardDescription>{list.description}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -119,12 +146,14 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><CalendarClock className="size-4 text-muted-foreground" />Next 7 days</CardTitle>
-          <CardDescription>Confirmed pickups coming up.</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarClock className="size-4 text-muted-foreground" />{t('today.next_7_days')}
+          </CardTitle>
+          <CardDescription>{t('today.next_7_days_desc')}</CardDescription>
         </CardHeader>
         <CardContent>
           {upcoming.length === 0 ? (
-            <p className="rounded-lg bg-muted/50 px-3 py-6 text-center text-sm text-muted-foreground">Nothing booked for the coming week.</p>
+            <p className="rounded-lg bg-muted/50 px-3 py-6 text-center text-sm text-muted-foreground">{t('today.next_7_days_empty')}</p>
           ) : (
             <ul className="divide-y">
               {upcoming.slice(0, 8).map((booking) => (
@@ -142,7 +171,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
             </ul>
           )}
           {upcoming.length > 0 ? (
-            <Button variant="link" className="mt-2 px-0" onClick={() => onNavigate('calendar')}>Open the calendar</Button>
+            <Button variant="link" className="mt-2 px-0" onClick={() => onNavigate('calendar')}>{t('action.open_calendar')}</Button>
           ) : null}
         </CardContent>
       </Card>

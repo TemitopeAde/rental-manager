@@ -46,6 +46,7 @@ export async function listMemberBookings(member: SiteMember) {
   const settings = await loadSettings(merchant);
   return {
     currency: settings.currency,
+    language: settings.language,
     bookings: bookings.map((booking): RenterBooking => ({ ...booking, itemName: names.get(booking.itemId) ?? 'Rental' })),
   };
 }

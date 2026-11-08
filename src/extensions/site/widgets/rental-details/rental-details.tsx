@@ -32,6 +32,9 @@ function DetailsElement(props: {
   headingFont?: string;
   bodyFont?: string;
   buttonFont?: string;
+  titleFont?: string;
+  descriptionFont?: string;
+  priceFont?: string;
 }) {
   return (
     <div
@@ -48,6 +51,9 @@ function DetailsElement(props: {
         headingFont: props.headingFont ? parseFont(props.headingFont, headingFont) : undefined,
         bodyFont: props.bodyFont ? parseFont(props.bodyFont, bodyFont) : undefined,
         buttonFont: props.buttonFont ? parseFont(props.buttonFont, buttonFont) : undefined,
+        titleFont: props.titleFont ? parseFont(props.titleFont, headingFont) : undefined,
+        descriptionFont: props.descriptionFont ? parseFont(props.descriptionFont, bodyFont) : undefined,
+        priceFont: props.priceFont ? parseFont(props.priceFont, bodyFont) : undefined,
       })}
     >
       <RentalDetails
@@ -97,5 +103,8 @@ export default reactToWebComponent(DetailsElement, React, ReactDOM, {
     headingFont: 'string',
     bodyFont: 'string',
     buttonFont: 'string',
+    titleFont: 'string',
+    descriptionFont: 'string',
+    priceFont: 'string',
   },
 });

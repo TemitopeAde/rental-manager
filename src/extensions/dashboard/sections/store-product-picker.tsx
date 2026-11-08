@@ -5,6 +5,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { api } from '@/dashboard/client';
+import { useI18n } from '@/i18n';
 
 export interface StoreProductOption {
   id: string;
@@ -24,6 +25,7 @@ export function StoreProductPicker({ id, value, onChange, formatPrice }: {
   onChange: (product: StoreProductOption | null) => void;
   formatPrice: (amount: number) => string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<StoreProductOption[]>([]);
@@ -41,7 +43,7 @@ export function StoreProductPicker({ id, value, onChange, formatPrice }: {
     let active = true;
     api<{ product: StoreProductOption | null }>(`/api/rentals/store-products?productId=${encodeURIComponent(value)}`)
       .then((body) => {
-        if (active) setSelected(body.product ?? { id: value, name: 'Product not found', price: 0, image: '', visible: false });
+        if (active) setSelected(body.product ?? { id: value, name: t('store_picker.product_not_found'), price: 0, image: '', visible: false });
       })
       .catch(() => {
         if (active) setSelected({ id: value, name: value, price: 0, image: '', visible: true });
@@ -51,7 +53,7 @@ export function StoreProductPicker({ id, value, onChange, formatPrice }: {
     };
     // `selected` is only read to skip a refetch after picking from the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [value, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -85,33 +87,37 @@ export function StoreProductPicker({ id, value, onChange, formatPrice }: {
   }
 
   const empty = {
-    loading: 'Searching…',
-    error: problem || 'Could not load products. Try again.',
-    'no-stores': 'Wix Stores isn\'t installed on this site.',
-    idle: search ? `No products match "${search}".` : 'No products yet.',
+    loading: t('store_picker.searching'),
+    error: problem || t('store_picker.load_failed'),
+    'no-stores': t('store_picker.stores_not_installed'),
+    idle: search ? t('store_picker.no_matches', { search }) : t('store_picker.no_products_found'),
   }[state];
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>Wix Store product</Label>
+      <Label htmlFor={id}>{t('store_picker.label')}</Label>
       <div className="flex gap-2">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button id={id} variant="outline" role="combobox" aria-expanded={open} className="h-auto min-h-9 flex-1 justify-between gap-2 px-2.5 py-1.5 font-normal">
-              {selected ? <ProductRow product={selected} formatPrice={formatPrice} /> : <span className="text-muted-foreground">Select a product…</span>}
+              {selected ? (
+                <ProductRow product={selected} formatPrice={formatPrice} t={t} />
+              ) : (
+                <span className="text-muted-foreground">{t('store_picker.placeholder')}</span>
+              )}
               <ChevronsUpDown className="shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-(--radix-popover-trigger-width) min-w-72 p-0" align="start">
             <Command shouldFilter={false}>
-              <CommandInput placeholder="Search products by name…" value={search} onValueChange={setSearch} />
+              <CommandInput placeholder={t('store_picker.search_placeholder')} value={search} onValueChange={setSearch} />
               <CommandList>
                 <CommandEmpty>{empty}</CommandEmpty>
                 {state !== 'loading' && results.length > 0 ? (
                   <CommandGroup>
                     {results.map((product) => (
                       <CommandItem key={product.id} value={product.id} data-checked={product.id === value} onSelect={() => choose(product)}>
-                        <ProductRow product={product} formatPrice={formatPrice} />
+                        <ProductRow product={product} formatPrice={formatPrice} t={t} />
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -121,15 +127,19 @@ export function StoreProductPicker({ id, value, onChange, formatPrice }: {
           </PopoverContent>
         </Popover>
         {selected ? (
-          <Button variant="ghost" size="icon" aria-label="Remove linked product" onClick={() => choose(null)}><X /></Button>
+          <Button variant="ghost" size="icon" aria-label={t('store_picker.remove_link_aria')} onClick={() => choose(null)}><X /></Button>
         ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">Optional. Links this rental to a Store product, even one outside the selected category.</p>
+      <p className="text-xs text-muted-foreground">{t('store_picker.tip')}</p>
     </div>
   );
 }
 
-function ProductRow({ product, formatPrice }: { product: StoreProductOption; formatPrice: (amount: number) => string }) {
+function ProductRow({ product, formatPrice, t }: {
+  product: StoreProductOption;
+  formatPrice: (amount: number) => string;
+  t: (k: string) => string;
+}) {
   return (
     <span className="flex min-w-0 items-center gap-2.5 text-left">
       {product.image ? (
@@ -140,7 +150,7 @@ function ProductRow({ product, formatPrice }: { product: StoreProductOption; for
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-sm">{product.name}</span>
         <span className="truncate text-xs text-muted-foreground">
-          {product.price ? formatPrice(product.price) : 'No price'}{product.visible ? '' : ' · Hidden'}
+          {product.price ? formatPrice(product.price) : t('store_picker.no_price')}{product.visible ? '' : ` · ${t('status.hidden')}`}
         </span>
       </span>
     </span>

@@ -4,7 +4,8 @@ import { httpClient } from '@wix/essentials';
 import { authentication } from '@wix/site-members';
 import { window as siteWindow } from '@wix/site-window';
 import { endpoint, post } from './client';
-import { addDays, isoDate, money, shortDate } from './format';
+import { addDays, isoDate } from './format';
+import { useSiteI18n } from './i18n';
 import { RentalCalendar } from './RentalCalendar';
 import styles from './my-rentals.module.css';
 
@@ -67,55 +68,52 @@ const samples: RenterBooking[] = [
   },
 ];
 
-function toDate(value: string): Date {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, (month ?? 1) - 1, day ?? 1);
-}
-
-function dateRange(start: string, end: string): string {
-  return `${shortDate(toDate(start))} → ${shortDate(toDate(end))}`;
-}
-
 type Phase = 'loading' | 'signed-out' | 'ready' | 'preview' | 'error';
 
-async function loadBookings(): Promise<{ phase: Phase; bookings: RenterBooking[]; currency?: string; message?: string }> {
+async function loadBookings(): Promise<{ phase: Phase; bookings: RenterBooking[]; currency?: string; language?: string; message?: string }> {
   try {
     const response = await httpClient.fetchWithAuth(endpoint('/api/rentals/my-bookings'));
     if (response.status === 401) {
       const mode = await siteWindow.viewMode().catch(() => 'Site');
       return mode === 'Site' ? { phase: 'signed-out', bookings: [] } : { phase: 'preview', bookings: samples, currency: 'USD' };
     }
-    const body = (await response.json()) as { bookings?: RenterBooking[]; currency?: string; message?: string };
+    const body = (await response.json()) as { bookings?: RenterBooking[]; currency?: string; language?: string; message?: string };
     if (!response.ok) return { phase: 'error', bookings: [], message: body.message };
-    return { phase: 'ready', bookings: body.bookings ?? [], currency: body.currency };
+    return { phase: 'ready', bookings: body.bookings ?? [], currency: body.currency, language: body.language };
   } catch {
     return { phase: 'preview', bookings: samples, currency: 'USD' };
   }
 }
 
 export function MyRentals({
-  title = 'My rentals',
+  title,
   description = '',
-  loginLabel = 'Log in',
-  emptyText = "You don't have any rentals yet.",
+  loginLabel,
+  emptyText,
   showPast = true,
+  language,
 }: {
   title?: string;
   description?: string;
   loginLabel?: string;
   emptyText?: string;
   showPast?: boolean;
+  language?: string;
 }) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [bookings, setBookings] = useState<RenterBooking[]>([]);
   const [currency, setCurrency] = useState<string | undefined>();
+  const [apiLanguage, setApiLanguage] = useState<string | undefined>();
   const [error, setError] = useState('');
+
+  const { t, isRtl, money, dateRange, dateLocale } = useSiteI18n(language || apiLanguage);
 
   const refresh = useCallback(async () => {
     const result = await loadBookings();
     setPhase(result.phase);
     setBookings(result.bookings);
     setCurrency(result.currency);
+    if (result.language) setApiLanguage(result.language);
     setError(result.message ?? '');
   }, []);
 
@@ -139,42 +137,71 @@ export function MyRentals({
   const upcoming = bookings.filter(isUpcoming).sort((a, b) => a.startDate.localeCompare(b.startDate));
   const past = bookings.filter((booking) => !isUpcoming(booking));
 
+  const isDefaultTitle = !title || title === 'My rentals';
+  const effectiveTitle = isDefaultTitle ? t('my_rentals_title') : title;
+  const isDefaultLogin = !loginLabel || loginLabel === 'Log in';
+  const effectiveLoginLabel = isDefaultLogin ? t('login') : loginLabel;
+  const isDefaultEmpty = !emptyText || emptyText === "You don't have any rentals yet.";
+  const effectiveEmptyText = isDefaultEmpty ? t('empty_rentals') : emptyText;
+
   return (
-    <section className={styles.root}>
+    <section className={styles.root} dir={isRtl ? 'rtl' : 'ltr'}>
       <header className={styles.header}>
-        {title ? <h2 className={styles.heading}>{title}</h2> : null}
+        {effectiveTitle ? <h2 className={styles.heading}>{effectiveTitle}</h2> : null}
         {description ? <p className={styles.lede}>{description}</p> : null}
       </header>
 
-      {phase === 'loading' ? <BookingsSkeleton /> : null}
+      {phase === 'loading' ? <BookingsSkeleton ariaLabel={t('loading_your_rentals')} /> : null}
 
       {phase === 'signed-out' ? (
         <div className={styles.empty}>
-          <p>Log in with the email you used at checkout to see and manage your rentals.</p>
-          <button type="button" className={styles.action} onClick={login}>{loginLabel}</button>
+          <p>{t('login_prompt')}</p>
+          <button type="button" className={styles.action} onClick={login}>{effectiveLoginLabel}</button>
         </div>
       ) : null}
 
-      {phase === 'error' ? <p className={styles.notice} data-tone="error" role="alert">{error || 'Could not load your rentals.'}</p> : null}
+      {phase === 'error' ? <p className={styles.notice} data-tone="error" role="alert">{error || t('could_not_load_rentals')}</p> : null}
 
       {phase === 'ready' || phase === 'preview' ? (
         bookings.length === 0 ? (
-          <p className={styles.empty}>{emptyText}</p>
+          <p className={styles.empty}>{effectiveEmptyText}</p>
         ) : (
           <>
             {upcoming.length > 0 ? (
               <div className={styles.group}>
-                <h3 className={styles.groupTitle}>Upcoming</h3>
+                <h3 className={styles.groupTitle}>{t('upcoming')}</h3>
                 {upcoming.map((booking) => (
-                  <BookingCard key={booking._id} booking={booking} currency={currency} preview={phase === 'preview'} onChanged={refresh} />
+                  <BookingCard
+                    key={booking._id}
+                    booking={booking}
+                    currency={currency}
+                    preview={phase === 'preview'}
+                    onChanged={refresh}
+                    t={t}
+                    money={money}
+                    dateRange={dateRange}
+                    dateLocale={dateLocale}
+                    isRtl={isRtl}
+                  />
                 ))}
               </div>
             ) : null}
             {showPast && past.length > 0 ? (
               <div className={styles.group}>
-                <h3 className={styles.groupTitle}>Past</h3>
+                <h3 className={styles.groupTitle}>{t('past')}</h3>
                 {past.map((booking) => (
-                  <BookingCard key={booking._id} booking={booking} currency={currency} preview={phase === 'preview'} onChanged={refresh} />
+                  <BookingCard
+                    key={booking._id}
+                    booking={booking}
+                    currency={currency}
+                    preview={phase === 'preview'}
+                    onChanged={refresh}
+                    t={t}
+                    money={money}
+                    dateRange={dateRange}
+                    dateLocale={dateLocale}
+                    isRtl={isRtl}
+                  />
                 ))}
               </div>
             ) : null}
@@ -186,9 +213,9 @@ export function MyRentals({
 }
 
 // Placeholder cards shaped like BookingCard, shown while the bookings load.
-function BookingsSkeleton() {
+function BookingsSkeleton({ ariaLabel }: { ariaLabel: string }) {
   return (
-    <div className={styles.group} role="status" aria-busy="true" aria-label="Loading your rentals">
+    <div className={styles.group} role="status" aria-busy="true" aria-label={ariaLabel}>
       <div className={styles.skeleton} data-shape="label" />
       {[0, 1].map((index) => (
         <div key={index} className={styles.card} aria-hidden="true">
@@ -222,11 +249,21 @@ function BookingCard({
   currency,
   preview,
   onChanged,
+  t,
+  money,
+  dateRange,
+  dateLocale,
+  isRtl,
 }: {
   booking: RenterBooking;
   currency?: string;
   preview: boolean;
   onChanged: () => Promise<void>;
+  t: (key: any, params?: any) => string;
+  money: (amount: number, currency?: string) => string;
+  dateRange: (start: string, end: string) => string;
+  dateLocale: any;
+  isRtl: boolean;
 }) {
   const [mode, setMode] = useState<'view' | 'cancel' | 'change'>('view');
   const [busy, setBusy] = useState(false);
@@ -234,20 +271,29 @@ function BookingCard({
   const canChange = changeable.includes(booking.status);
   const request = booking.changeRequest;
 
+  const statusLabel: Record<Status, string> = {
+    pending: t('status_pending'),
+    confirmed: t('status_confirmed'),
+    active: t('status_active'),
+    overdue: t('status_overdue'),
+    returned: t('status_returned'),
+    cancelled: t('status_cancelled'),
+  };
+
   async function run(payload: Record<string, unknown>) {
     if (preview) {
-      setMessage({ tone: 'error', text: 'This is a preview. Publish the site to manage real bookings.' });
+      setMessage({ tone: 'error', text: t('preview_manage_notice') });
       return;
     }
     setBusy(true);
     setMessage(null);
     try {
       const result = await post<{ message?: string }>('/api/rentals/my-bookings', { reference: booking.reference, ...payload });
-      setMessage({ tone: 'success', text: result.message || 'Done.' });
+      setMessage({ tone: 'success', text: result.message || t('done') });
       setMode('view');
       await onChanged();
     } catch (error) {
-      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Something went wrong.' });
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : t('something_went_wrong') });
     } finally {
       setBusy(false);
     }
@@ -265,20 +311,20 @@ function BookingCard({
 
       <dl className={styles.facts}>
         <div>
-          <dt>Dates</dt>
+          <dt>{t('dates_label')}</dt>
           <dd>{dateRange(booking.startDate, booking.endDate)}</dd>
         </div>
         <div>
-          <dt>Quantity</dt>
+          <dt>{t('quantity_label')}</dt>
           <dd>{booking.quantity}</dd>
         </div>
         <div>
-          <dt>Total</dt>
+          <dt>{t('total_label')}</dt>
           <dd>{money(booking.quote.total, currency)}</dd>
         </div>
         {booking.quote.deposit > 0 ? (
           <div>
-            <dt>Deposit</dt>
+            <dt>{t('deposit_label')}</dt>
             <dd>{money(booking.quote.deposit, currency)}</dd>
           </div>
         ) : null}
@@ -287,39 +333,39 @@ function BookingCard({
       {request?.status === 'pending' ? (
         <p className={styles.notice} data-tone="info">
           {request.type === 'cancel'
-            ? 'You asked to cancel this rental. Waiting for the shop to confirm.'
-            : `You asked to move this rental to ${dateRange(request.startDate, request.endDate)}. Waiting for the shop to confirm.`}
+            ? t('request_cancel_pending')
+            : t('request_change_pending', { range: dateRange(request.startDate, request.endDate) })}
         </p>
       ) : null}
       {request?.status === 'declined' ? (
         <p className={styles.notice} data-tone="error">
           {request.type === 'cancel'
-            ? "The shop couldn't cancel this rental, so it stays booked."
-            : `The shop couldn't move this rental to ${dateRange(request.startDate, request.endDate)}.`}
+            ? t('request_cancel_declined')
+            : t('request_change_declined', { range: dateRange(request.startDate, request.endDate) })}
         </p>
       ) : null}
       {booking.status === 'cancelled' && booking.refundNeeded ? (
-        <p className={styles.muted}>The shop will refund your payment.</p>
+        <p className={styles.muted}>{t('refund_pending')}</p>
       ) : null}
 
       {message ? <p className={styles.notice} data-tone={message.tone} role="status">{message.text}</p> : null}
 
       {canChange && mode === 'view' && request?.status !== 'pending' ? (
         <div className={styles.actions}>
-          <button type="button" className={styles.secondary} onClick={() => { setMessage(null); setMode('change'); }}>Change dates</button>
-          <button type="button" className={styles.danger} onClick={() => { setMessage(null); setMode('cancel'); }}>Cancel rental</button>
+          <button type="button" className={styles.secondary} onClick={() => { setMessage(null); setMode('change'); }}>{t('change_dates')}</button>
+          <button type="button" className={styles.danger} onClick={() => { setMessage(null); setMode('cancel'); }}>{t('cancel_rental')}</button>
         </div>
       ) : null}
 
       {mode === 'cancel' ? (
         <div className={styles.confirm}>
-          <p>Ask the shop to cancel {booking.itemName} for {dateRange(booking.startDate, booking.endDate)}? Your rental stays booked until the shop confirms.</p>
+          <p>{t('cancel_confirm', { name: booking.itemName, range: dateRange(booking.startDate, booking.endDate) })}</p>
           <div className={styles.actions}>
-            <button type="button" className={styles.secondary} disabled={busy} onClick={() => setMode('view')}>Keep rental</button>
+            <button type="button" className={styles.secondary} disabled={busy} onClick={() => setMode('view')}>{t('keep_rental')}</button>
             <button type="button" className={styles.dangerSolid} disabled={busy} aria-busy={busy} onClick={() => void run({ action: 'cancel' })}>
               <span className={styles.buttonContent}>
                 {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
-                <span>Request cancellation</span>
+                <span>{t('request_cancellation')}</span>
               </span>
             </button>
           </div>
@@ -327,7 +373,19 @@ function BookingCard({
       ) : null}
 
       {mode === 'change' ? (
-        <ChangeDates booking={booking} currency={currency} preview={preview} busy={busy} onCancel={() => setMode('view')} onSubmit={(startDate, endDate) => void run({ action: 'change', startDate, endDate })} />
+        <ChangeDates
+          booking={booking}
+          currency={currency}
+          preview={preview}
+          busy={busy}
+          onCancel={() => setMode('view')}
+          onSubmit={(startDate, endDate) => void run({ action: 'change', startDate, endDate })}
+          t={t}
+          money={money}
+          dateRange={dateRange}
+          dateLocale={dateLocale}
+          isRtl={isRtl}
+        />
       ) : null}
     </article>
   );
@@ -340,6 +398,11 @@ function ChangeDates({
   busy,
   onCancel,
   onSubmit,
+  t,
+  money,
+  dateRange,
+  dateLocale,
+  isRtl,
 }: {
   booking: RenterBooking;
   currency?: string;
@@ -347,6 +410,11 @@ function ChangeDates({
   busy: boolean;
   onCancel: () => void;
   onSubmit: (startDate: string, endDate: string) => void;
+  t: (key: any, params?: any) => string;
+  money: (amount: number, currency?: string) => string;
+  dateRange: (start: string, end: string) => string;
+  dateLocale: any;
+  isRtl: boolean;
 }) {
   const [range, setRange] = useState<DateRange | undefined>();
   const [quote, setQuote] = useState<{ ok: boolean; message?: string; quote?: Quote; difference?: number } | null>(null);
@@ -373,20 +441,26 @@ function ChangeDates({
 
   return (
     <div className={styles.change}>
-      <p className={styles.muted}>Pick your new pickup and return dates. The shop confirms every change.</p>
+      <p className={styles.muted}>{t('change_prompt')}</p>
       <div className={styles.calendarCard}>
-        <RentalCalendar range={range} onChange={setRange} firstAvailable={new Date()} />
+        <RentalCalendar
+          range={range}
+          onChange={setRange}
+          firstAvailable={new Date()}
+          locale={dateLocale}
+          dir={isRtl ? 'rtl' : 'ltr'}
+        />
       </div>
-      {startDate && endDate ? <p className={styles.newDates}>New dates: {dateRange(startDate, endDate)}</p> : null}
+      {startDate && endDate ? <p className={styles.newDates}>{t('new_dates_label', { range: dateRange(startDate, endDate) })}</p> : null}
       {quote?.ok && quote.quote ? (
         <p className={styles.muted}>
-          New total {money(quote.quote.total, currency)}
-          {difference > 0 ? ` (${money(difference, currency)} more)` : difference < 0 ? ` (${money(-difference, currency)} less)` : ' (no change)'}
+          {t('new_total_label', { total: money(quote.quote.total, currency) })}
+          {difference > 0 ? ` ${t('more', { amount: money(difference, currency) })}` : difference < 0 ? ` ${t('less', { amount: money(-difference, currency) })}` : ` ${t('no_change')}`}
         </p>
       ) : null}
       {quote && !quote.ok ? <p className={styles.notice} data-tone="error" role="alert">{quote.message}</p> : null}
       <div className={styles.actions}>
-        <button type="button" className={styles.secondary} disabled={busy} onClick={onCancel}>Back</button>
+        <button type="button" className={styles.secondary} disabled={busy} onClick={onCancel}>{t('back_action')}</button>
         <button
           type="button"
           className={styles.action}
@@ -396,7 +470,7 @@ function ChangeDates({
         >
           <span className={styles.buttonContent}>
             {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
-            <span>Request new dates</span>
+            <span>{t('request_new_dates')}</span>
           </span>
         </button>
       </div>

@@ -3,7 +3,8 @@ import type { DateRange } from 'react-day-picker';
 import { currentCartV2 } from '@wix/ecom';
 import { APP_ID } from '../rental/constants';
 import { post, request } from './client';
-import { addDays, isoDate, money, partClass, shortDate } from './format';
+import { addDays, isoDate, partClass } from './format';
+import { useSiteI18n } from './i18n';
 import { RentalCalendar } from './RentalCalendar';
 import type { CatalogItem } from './types';
 import styles from './rental.module.css';
@@ -53,14 +54,15 @@ function LoadingDots({ label }: { label: string }) {
 
 export function RentalBookingForm({
   itemId = '',
-  buttonLabel = 'Rent now',
+  buttonLabel,
   showDeposit = true,
   showWeeklyPrice = true,
   showQuantity = true,
-  title = 'Book your rental',
+  title,
   description = '',
   monthsShown = 1,
   embedded = false,
+  language,
   parts,
   onNotification,
 }: {
@@ -74,11 +76,13 @@ export function RentalBookingForm({
   monthsShown?: number;
   /** Inside the details widget, which already shows the item's name and rates. */
   embedded?: boolean;
+  language?: string;
   parts?: BookingParts;
   onNotification?: (notification: BookingNotification) => void;
 }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [currency, setCurrency] = useState<string | undefined>();
+  const [apiLanguage, setApiLanguage] = useState<string | undefined>();
   const [selected, setSelected] = useState(itemId);
   const [range, setRange] = useState<DateRange | undefined>();
   const [quantity, setQuantity] = useState(1);
@@ -88,16 +92,19 @@ export function RentalBookingForm({
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
 
+  const { t, dateLocale, isRtl, money, shortDate } = useSiteI18n(language || apiLanguage);
+
   function notify(notification: BookingNotification) {
     onNotification?.(notification);
     return notification;
   }
 
   useEffect(() => {
-    request<{ items: CatalogItem[]; currency?: string }>('/api/rentals/catalog')
+    request<{ items: CatalogItem[]; currency?: string; language?: string }>('/api/rentals/catalog')
       .then((body) => {
         setItems(body.items);
         setCurrency(body.currency);
+        if (body.language) setApiLanguage(body.language);
         setSelected((current) => current || body.items[0]?._id || '');
       })
       .catch(() => {
@@ -135,22 +142,22 @@ export function RentalBookingForm({
         .then((body) => {
           if (!active) return;
           setQuote(body);
-          if (!body.ok) notify({ tone: 'error', text: body.message || 'Those dates are not available.' });
+          if (!body.ok) notify({ tone: 'error', text: body.message || t('dates_unavailable') });
         })
         .catch((error: Error) => {
           if (!active) return;
-          const text = error.message || 'Could not check availability.';
+          const text = error.message || t('availability_error');
           setQuote({ ok: false, message: text });
           notify({ tone: 'error', text });
         })
         .finally(() => { if (active) setQuoteLoading(false); });
     }, 300);
     return () => { active = false; clearTimeout(timer); };
-  }, [selected, startDate, endDate, quantity, preview]);
+  }, [selected, startDate, endDate, quantity, preview, t]);
 
   async function rent() {
     if (preview) {
-      const notification = notify({ tone: 'error', text: 'This is a preview. Publish the site to take a booking.' });
+      const notification = notify({ tone: 'error', text: t('preview_booking_notice') });
       setMessage(notification);
       return;
     }
@@ -165,7 +172,7 @@ export function RentalBookingForm({
         idempotencyKey: crypto.randomUUID(),
       });
       if (!held.ok || !held.booking) {
-        const notification = notify({ tone: 'error', text: held.message || 'Those dates are not available.' });
+        const notification = notify({ tone: 'error', text: held.message || t('dates_unavailable') });
         setMessage(notification);
         return;
       }
@@ -183,10 +190,10 @@ export function RentalBookingForm({
       });
       await currentCartV2.refreshCurrentCart();
       await post('/api/rentals/hold', { action: 'extend', bookingId: held.booking._id }).catch(() => undefined);
-      const notification = notify({ tone: 'success', text: `${held.booking.reference} is in your cart. Complete checkout within 30 minutes.` });
+      const notification = notify({ tone: 'success', text: t('cart_success', { reference: held.booking.reference }) });
       setMessage(notification);
     } catch (error) {
-      const notification = notify({ tone: 'error', text: error instanceof Error ? error.message : 'Could not start checkout.' });
+      const notification = notify({ tone: 'error', text: error instanceof Error ? error.message : t('checkout_error') });
       setMessage(notification);
     } finally {
       setBusy(false);
@@ -196,11 +203,15 @@ export function RentalBookingForm({
   const priced = quote?.ok && quote.quote ? quote.quote : null;
   const quoteCurrency = quote?.currency ?? currency;
   const ready = Boolean(selected && startDate && endDate) && (preview || Boolean(priced));
+  const isDefaultTitle = !title || title === 'Rentals' || title === 'Book your rental';
+  const effectiveTitle = isDefaultTitle ? t('booking_title') : title;
+  const isDefaultButton = !buttonLabel || buttonLabel === 'Rent now';
+  const effectiveButtonLabel = isDefaultButton ? t('rent_now') : buttonLabel;
 
   return (
-    <form className={styles.booking} onSubmit={(event) => { event.preventDefault(); void rent(); }}>
+    <form className={styles.booking} dir={isRtl ? 'rtl' : 'ltr'} onSubmit={(event) => { event.preventDefault(); void rent(); }}>
       <header className={styles.header}>
-        {title ? <h2 {...parts?.title} className={partClass(styles.heading, parts?.title)}>{title}</h2> : null}
+        {effectiveTitle ? <h2 {...parts?.title} className={partClass(styles.heading, parts?.title)}>{effectiveTitle}</h2> : null}
         {description ? (
           <p {...parts?.description} className={partClass(styles.lede, parts?.description)}>{description}</p>
         ) : null}
@@ -208,7 +219,7 @@ export function RentalBookingForm({
 
       {showPicker ? (
         <div className={styles.field}>
-          <label className={styles.label} htmlFor="rental-item">What would you like to rent?</label>
+          <label className={styles.label} htmlFor="rental-item">{t('item_picker_label')}</label>
           <div className={styles.selectWrap}>
             <select
               id="rental-item"
@@ -228,42 +239,49 @@ export function RentalBookingForm({
 
       {item && !embedded ? (
         <div className={styles.rates}>
-          <span className={styles.rate}><strong>{money(item.dailyRate, currency)}</strong> / day</span>
+          <span className={styles.rate}><strong>{money(item.dailyRate, currency)}</strong>{t('per_day')}</span>
           {showWeeklyPrice && item.weeklyRate > 0 ? (
-            <span className={styles.rate}><strong>{money(item.weeklyRate, currency)}</strong> / week</span>
+            <span className={styles.rate}><strong>{money(item.weeklyRate, currency)}</strong>{t('per_week')}</span>
           ) : null}
           {showDeposit && item.depositAmount ? (
-            <span className={styles.rateMuted}>{money(item.depositAmount, currency)} refundable deposit</span>
+            <span className={styles.rateMuted}>{money(item.depositAmount, currency)} {t('refundable_deposit')}</span>
           ) : null}
         </div>
       ) : null}
 
       <div className={styles.dates} aria-live="polite">
         <div className={styles.dateChip} data-active={!range?.from || undefined}>
-          <span className={styles.dateLabel}>Pickup</span>
-          <span className={styles.dateValue}>{shortDate(range?.from) || 'Select date'}</span>
+          <span className={styles.dateLabel}>{t('pickup')}</span>
+          <span className={styles.dateValue}>{shortDate(range?.from) || t('select_date')}</span>
         </div>
-        <span className={styles.dateArrow} aria-hidden="true">→</span>
+        <span className={styles.dateArrow} aria-hidden="true">{isRtl ? '←' : '→'}</span>
         <div className={styles.dateChip} data-active={(range?.from && !range.to) || undefined}>
-          <span className={styles.dateLabel}>Return</span>
-          <span className={styles.dateValue}>{shortDate(range?.to) || 'Select date'}</span>
+          <span className={styles.dateLabel}>{t('return')}</span>
+          <span className={styles.dateValue}>{shortDate(range?.to) || t('select_date')}</span>
         </div>
       </div>
 
       <div className={styles.calendarCard}>
-        <RentalCalendar range={range} onChange={setRange} firstAvailable={firstAvailable} months={monthsShown} />
+        <RentalCalendar
+          range={range}
+          onChange={setRange}
+          firstAvailable={firstAvailable}
+          months={monthsShown}
+          locale={dateLocale}
+          dir={isRtl ? 'rtl' : 'ltr'}
+        />
         {item && (item.minDays ?? 1) > 1 ? (
-          <p className={styles.hint}>Minimum rental: {item.minDays} days.</p>
+          <p className={styles.hint}>{t('min_days_sentence', { count: item.minDays })}</p>
         ) : null}
       </div>
 
       {showQuantity ? (
         <div className={styles.quantityRow}>
-          <span className={styles.label} id="rental-qty-label">Quantity</span>
+          <span className={styles.label} id="rental-qty-label">{t('quantity')}</span>
           <div className={styles.stepper} role="group" aria-labelledby="rental-qty-label">
-            <button type="button" className={styles.stepButton} aria-label="Decrease quantity" disabled={quantity <= 1} onClick={() => setQuantity((value) => Math.max(1, value - 1))}>−</button>
+            <button type="button" className={styles.stepButton} aria-label={t('decrease_quantity')} disabled={quantity <= 1} onClick={() => setQuantity((value) => Math.max(1, value - 1))}>−</button>
             <output className={styles.stepValue} aria-live="polite">{quantity}</output>
-            <button type="button" className={styles.stepButton} aria-label="Increase quantity" disabled={quantity >= maxQuantity} onClick={() => setQuantity((value) => Math.min(maxQuantity, value + 1))}>+</button>
+            <button type="button" className={styles.stepButton} aria-label={t('increase_quantity')} disabled={quantity >= maxQuantity} onClick={() => setQuantity((value) => Math.min(maxQuantity, value + 1))}>+</button>
           </div>
         </div>
       ) : null}
@@ -271,17 +289,17 @@ export function RentalBookingForm({
       {priced ? (
         <dl className={styles.summary}>
           <div className={styles.summaryRow}>
-            <dt>Rental · {priced.days} {priced.days === 1 ? 'day' : 'days'}{quantity > 1 ? ` × ${quantity}` : ''}</dt>
+            <dt>{t('rental_summary_line', { days: priced.days, unit: priced.days === 1 ? t('day') : t('days') })}{quantity > 1 ? ` × ${quantity}` : ''}</dt>
             <dd>{money(priced.rental, quoteCurrency)}</dd>
           </div>
           {showDeposit && priced.deposit > 0 ? (
             <div className={styles.summaryRow}>
-              <dt>Refundable deposit</dt>
+              <dt>{t('deposit_label')}</dt>
               <dd>{money(priced.deposit, quoteCurrency)}</dd>
             </div>
           ) : null}
           <div className={styles.summaryTotal}>
-            <dt>Total</dt>
+            <dt>{t('total')}</dt>
             <dd>
               <p {...parts?.quote} className={partClass(styles.totalValue, parts?.quote)}>{money(priced.total, quoteCurrency)}</p>
             </dd>
@@ -289,15 +307,15 @@ export function RentalBookingForm({
         </dl>
       ) : null}
 
-      {quoteLoading ? <LoadingDots label="Checking availability" /> : null}
+      {quoteLoading ? <LoadingDots label={t('checking_availability')} /> : null}
       {quote && !quote.ok && !onNotification ? <p className={styles.notice} data-tone="error" role="alert">{quote.message}</p> : null}
-      {busy ? <LoadingDots label="Adding rental to cart" /> : null}
+      {busy ? <LoadingDots label={t('adding_to_cart')} /> : null}
       {message && !onNotification ? <p className={styles.notice} data-tone={message.tone} role="status">{message.text}</p> : null}
 
       <button {...parts?.button} className={partClass(styles.action, parts?.button)} type="submit" disabled={busy || !ready} aria-busy={busy}>
         <span className={styles.buttonContent}>
           {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
-          <span>{buttonLabel}</span>
+          <span>{effectiveButtonLabel}</span>
         </span>
       </button>
     </form>

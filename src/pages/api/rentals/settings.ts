@@ -35,6 +35,7 @@ export const POST: APIRoute = async ({ request }) => {
     emailRentersRequestUpdates: typeof body.emailRentersRequestUpdates === 'boolean' ? body.emailRentersRequestUpdates : undefined,
     emailRentersBookingUpdates: typeof body.emailRentersBookingUpdates === 'boolean' ? body.emailRentersBookingUpdates : undefined,
     emailRentersDepositUpdates: typeof body.emailRentersDepositUpdates === 'boolean' ? body.emailRentersDepositUpdates : undefined,
+    language: str(body.language) || undefined,
     storeCategoryId: str(body.storeCategoryId),
     storeCategoryName: str(body.storeCategoryName),
     storeCategoryVersion:

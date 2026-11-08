@@ -10,5 +10,5 @@ export const GET: APIRoute = async ({ request }) => {
     return json({ eligible: false, message: 'This product is not configured as a rental.' }, 404);
   }
   const settings = await loadSettings({ elevate: true });
-  return json({ eligible: true, item, currency: settings.currency });
+  return json({ eligible: true, item, currency: settings.currency, language: settings.language });
 };
