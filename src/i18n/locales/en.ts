@@ -37,6 +37,7 @@ export const en = {
     items: 'Items',
     analytics: 'Analytics',
     settings: 'Settings',
+    guide: 'Guide',
   },
   status: {
     hold: 'On hold',

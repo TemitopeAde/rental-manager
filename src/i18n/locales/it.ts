@@ -39,6 +39,7 @@ export const it: Translations = {
     items: 'Articoli',
     analytics: 'Statistiche',
     settings: 'Impostazioni',
+    guide: 'Guida',
   },
   status: {
     hold: 'In attesa',

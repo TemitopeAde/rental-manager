@@ -39,6 +39,7 @@ export const pt: Translations = {
     items: 'Itens',
     analytics: 'Relatórios',
     settings: 'Configurações',
+    guide: 'Guia',
   },
   status: {
     hold: 'Em espera',

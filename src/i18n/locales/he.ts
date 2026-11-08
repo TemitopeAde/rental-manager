@@ -39,6 +39,7 @@ export const he: Translations = {
     items: 'פריטים',
     analytics: 'דוחות',
     settings: 'הגדרות',
+    guide: 'מדריך',
   },
   status: {
     hold: 'בהמתנה',

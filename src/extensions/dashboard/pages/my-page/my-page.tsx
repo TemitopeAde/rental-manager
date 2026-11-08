@@ -1,5 +1,5 @@
 import { useState, type FC } from 'react';
-import { CalendarDays, CalendarRange, ChartColumn, ClipboardList, Package, Settings } from 'lucide-react';
+import { BookOpenText, CalendarDays, CalendarRange, ChartColumn, ClipboardList, Package, Settings } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { I18nProvider, LanguageSwitcher, useI18n } from '@/i18n';
@@ -10,6 +10,7 @@ import {
   CalendarSection,
   DashboardDataProvider,
   ItemsSection,
+  GuideSection,
   MembersAreaNotice,
   SettingsSection,
   ToastProvider,
@@ -28,6 +29,7 @@ const icons: Record<SectionId, typeof CalendarDays> = {
   items: Package,
   analytics: ChartColumn,
   settings: Settings,
+  guide: BookOpenText,
 };
 
 function initialSection(): SectionId {
@@ -125,6 +127,7 @@ function Shell() {
           {active === 'items' ? <ItemsSection /> : null}
           {active === 'analytics' ? <AnalyticsSection /> : null}
           {active === 'settings' ? <SettingsSection /> : null}
+          {active === 'guide' ? <GuideSection onNavigate={open} /> : null}
         </div>
       </main>
     </div>

@@ -13,14 +13,6 @@ export default extensions.customElement({
   installation: {
     autoAdd: false
   },
-  presets: [
-    {
-      id: '94903c19-e2a1-451b-9ae1-f3a22d1ad80c',
-      name: 'default',
-      thumbnailUrl: '{{BASE_URL}}/rental-details-thumbnail.png',
-    },
-  ],
-
   tagName: 'rental-details',
   element: './extensions/site/widgets/rental-details/rental-details.tsx',
   settings: './extensions/site/widgets/rental-details/rental-details.panel.tsx',
