@@ -1,6 +1,7 @@
 import { appInstances } from '@wix/app-management';
 import { auth } from '@wix/essentials';
 import { APP_ID, collections } from './constants';
+import type { CurrentAppInstance } from './app-instance';
 import { pickBookableIds, planFor, resolvePlan, type InstanceSnapshot, type PlanLimits } from './plan-rules';
 import type { Access } from './store';
 import { queryRows } from './store';
@@ -8,7 +9,10 @@ import { queryRows } from './store';
 export type { PlanLabel, PlanLimits, PlanTier } from './plan-rules';
 export { liveItemCount } from './plan-rules';
 
-export async function readPlan(access: Access): Promise<PlanLimits> {
+export async function readPlan(access: Access, appInstance?: CurrentAppInstance | null): Promise<PlanLimits> {
+  if (appInstance !== undefined) {
+    return appInstance ? resolvePlan(appInstance as InstanceSnapshot, APP_ID) : planFor('free');
+  }
   try {
     const getInstance = access.elevate
       ? auth.elevate(appInstances.getAppInstance)

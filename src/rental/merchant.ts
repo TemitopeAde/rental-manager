@@ -10,17 +10,25 @@ import { text } from './models';
 import { canBookItem, liveItemCount, readPlan } from './plans';
 import { defaultSettings } from './availability';
 import { insertRow, queryRows, removeRow, updateRow, getRow, type Row } from './store';
-import { getCatalogState, getStoreProduct, listStoreCategories, productMatchesCategory } from './stores';
+import { getCatalogState, getStoreProduct, getStoreProductImageGalleries, listStoreCategories, productMatchesCategory } from './stores';
 import { emailBookingUpdate } from './emails';
 
 const merchant = { elevate: true };
 
-export async function listItems(category?: string, status?: string) {
+function storeGallery(images: Array<{ src: string; alt: string }>, fallbackAlt: string) {
+  return images.map((image) => ({ type: 'image', src: image.src, title: image.alt || fallbackAlt, alt: image.alt || fallbackAlt }));
+}
+
+export async function listItemPage(category?: string, status?: string, offset = 0, limit = 200) {
   let query = queryRows(collections.items, merchant);
   if (category) query = query.eq('category', category);
   if (status) query = query.eq('status', status);
-  const result = await query.ascending('name').limit(200).find();
-  return result.items.map((row) => asItem(row as Row));
+  const result = await query.ascending('name').skip(offset).limit(limit).find();
+  return { items: result.items.map((row) => asItem(row as Row)), hasMore: result.hasNext() };
+}
+
+export async function listItems(category?: string, status?: string) {
+  return (await listItemPage(category, status)).items;
 }
 
 // Category tabs come from every active item, not the filtered page, so they stay put while filtering.
@@ -54,6 +62,7 @@ export async function createItem(input: Partial<RentalItem>) {
   if (!input.name || !input.dailyRate || input.dailyRate <= 0) {
     return { ok: false as const, message: 'A name and a daily rate are required.' };
   }
+  const storeProduct = input.storeProductId ? await getStoreProduct(input.storeProductId) : null;
   const slug = (input.slug || input.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const created = await insertRow(
     collections.items,
@@ -73,6 +82,11 @@ export async function createItem(input: Partial<RentalItem>) {
       status: input.status ?? 'active',
       storeProductId: input.storeProductId ?? '',
       storeRentalOverride: input.storeRentalOverride ?? 'inherit',
+      images: storeProduct
+        ? storeGallery(storeProduct.images, input.name)
+        : input.storeProductId
+          ? []
+          : (input.images ?? []).map((image) => ({ type: 'image', src: image.src, title: image.alt, alt: image.alt })),
     },
     merchant,
   );
@@ -92,6 +106,21 @@ export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   for (const field of fields) {
     if (patch[field] !== undefined) (next as Record<string, unknown>)[field] = patch[field];
   }
+  const linkedProductChanged = patch.storeProductId !== undefined && patch.storeProductId !== text(row.storeProductId);
+  if (linkedProductChanged) {
+    // The linked product owns the rental's gallery. Clear stale images if the new
+    // product cannot be resolved, then populate it when its Stores record is available.
+    const productId = text(patch.storeProductId);
+    next.images = [];
+    if (productId) {
+      const product = await getStoreProduct(productId);
+      if (product) next.images = storeGallery(product.images, text(next.name));
+    } else {
+      next.images = (patch.images ?? []).map((image) => ({ type: 'image', src: image.src, title: image.alt, alt: image.alt }));
+    }
+  } else if (!text(next.storeProductId) && patch.images !== undefined) {
+    next.images = patch.images.map((image) => ({ type: 'image', src: image.src, title: image.alt, alt: image.alt }));
+  }
   // Restoring an archived item adds one back toward the limit, the same as creating one.
   if (text(row.status) === 'archived' && text(next.status) !== 'archived' && plan.maxItems !== null) {
     const existing = await queryRows(collections.items, merchant).limit(1000).find();
@@ -105,6 +134,66 @@ export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   }
   const updated = await updateRow(collections.items, next, merchant);
   return { ok: true as const, item: asItem(updated) };
+}
+
+/** Refreshes existing linked rental galleries from their Wix Stores product records. */
+export async function syncLinkedStoreImages(items: RentalItem[]): Promise<RentalItem[]> {
+  const linked = items.filter((item) => item.storeProductId);
+  if (linked.length === 0) return items;
+  const syncStartedAt = Date.now();
+  const catalogVersion = await getCatalogState();
+  if (catalogVersion === 'STORES_NOT_INSTALLED') return items;
+  const galleries = await getStoreProductImageGalleries(
+    linked.map((item) => item.storeProductId!),
+    catalogVersion,
+  );
+  const refreshed = new Map<string, RentalItem>();
+  let matchedProducts = 0;
+  let changedGalleries = 0;
+  let persistedGalleries = 0;
+  let syncFailures = 0;
+  let persistenceTimeSumMs = 0;
+  let lastSyncError: string | undefined;
+  await Promise.all(linked.map(async (item) => {
+    let persistenceStartedAt: number | undefined;
+    try {
+      const productImages = galleries.get(item.storeProductId!);
+      if (!productImages) return;
+      matchedProducts += 1;
+      const images = storeGallery(productImages, item.name);
+      const normalized = productImages.map((image) => ({ src: image.src, alt: image.alt || item.name }));
+      if (JSON.stringify(item.images) === JSON.stringify(normalized)) {
+        refreshed.set(item._id, item);
+        return;
+      }
+      changedGalleries += 1;
+      persistenceStartedAt = Date.now();
+      const row = await getRow(collections.items, item._id, merchant);
+      if (!row) return;
+      const saved = await updateRow(collections.items, { ...row, images }, merchant);
+      refreshed.set(item._id, asItem(saved));
+      persistedGalleries += 1;
+    } catch (error) {
+      // A temporary Stores read/write failure should not take the rental catalog offline.
+      syncFailures += 1;
+      lastSyncError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (persistenceStartedAt !== undefined) persistenceTimeSumMs += Date.now() - persistenceStartedAt;
+    }
+  }));
+  console.info('[RentalManager catalog timing]', JSON.stringify({
+    event: 'rental_catalog_store_gallery_sync',
+    catalogVersion,
+    linkedRentals: linked.length,
+    matchedProducts,
+    changedGalleries,
+    persistedGalleries,
+    syncFailures,
+    persistenceTimeSumMs,
+    durationMs: Date.now() - syncStartedAt,
+    ...(lastSyncError ? { lastSyncError } : {}),
+  }));
+  return items.map((item) => refreshed.get(item._id) ?? item);
 }
 
 export async function saveSettings(patch: Partial<Settings>) {
@@ -199,6 +288,7 @@ export async function resolveStoreRentalItem(productId: string) {
     category: existing ? text(existing.category) : settings.storeCategoryName,
     storeProductId: product.id,
     storeRentalOverride: explicit,
+    images: storeGallery(product.images, product.name || text(base.name)),
     status: text(base.status, 'active'),
   };
   const saved = existing ? await updateRow(collections.items, next, merchant) : await insertRow(collections.items, next, merchant);

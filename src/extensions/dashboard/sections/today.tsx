@@ -3,12 +3,14 @@ import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CalendarClock, Hourgla
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/dashboard/client';
+import { requestDashboardData } from '@/dashboard/data-cache';
 import { useI18n } from '@/i18n';
 import { BookingActionButton, BookingSheet, useBookingActions } from './bookings';
 import {
   ErrorState,
   isoDay,
   LoadingState,
+  RefreshNotice,
   nextAction,
   StatCard,
   StatusBadge,
@@ -27,17 +29,17 @@ interface TodayBoard {
 export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'calendar') => void }) {
   const { itemName } = useDashboard();
   const { t, formatDay, formatRange } = useI18n();
-  const { data, error, refresh } = useResource(async () => {
+  const { data, error, refresh, refreshError } = useResource('/api/rentals/today-board', async () => {
     const [board, all] = await Promise.all([
-      api<TodayBoard>('/api/rentals/today'),
-      api<{ bookings: BookingRow[] }>('/api/rentals/bookings'),
+      requestDashboardData('/api/rentals/today', () => api<TodayBoard>('/api/rentals/today')),
+      requestDashboardData('/api/rentals/bookings', () => api<{ bookings: BookingRow[] }>('/api/rentals/bookings')),
     ]);
     return { board, bookings: all.bookings };
   });
   const { act, busy } = useBookingActions(refresh);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  if (error) return <ErrorState title={t('today.error_title')} message={error} onRetry={() => void refresh()} />;
+  if (error && !data) return <ErrorState title={t('today.error_title')} message={error} onRetry={() => void refresh()} />;
   if (!data) return <LoadingState />;
 
   const { board, bookings } = data;
@@ -88,6 +90,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
 
   return (
     <div className="flex flex-col gap-5">
+      {refreshError ? <RefreshNotice onRetry={() => void refresh()} /> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label={t('today.stat_pickups')} value={board.pickups.length} icon={ArrowUpFromLine} />
         <StatCard label={t('today.stat_returns')} value={board.returns.length} icon={ArrowDownToLine} tone="success" />

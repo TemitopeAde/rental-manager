@@ -12,6 +12,7 @@ import {
   isoDay,
   LoadingState,
   SectionHeader,
+  RefreshNotice,
   statusLabel,
   StatusBadge,
   useDashboard,
@@ -90,7 +91,7 @@ function MonthDay({ day: calendarDay, modifiers, className, ...button }: DayButt
 export function CalendarSection() {
   const { plan, itemName } = useDashboard();
   const { t, formatDay, formatRange, formatDate } = useI18n();
-  const { data, error, refresh } = useResource(() => api<{ bookings: BookingRow[] }>('/api/rentals/bookings'));
+  const { data, error, refresh, refreshError } = useResource('/api/rentals/bookings', () => api<{ bookings: BookingRow[] }>('/api/rentals/bookings'));
   const { act, busy } = useBookingActions(refresh);
   const [day, setDay] = useState<Date>(new Date());
   const [openId, setOpenId] = useState<string | null>(null);
@@ -102,7 +103,7 @@ export function CalendarSection() {
       </EmptyState>
     );
   }
-  if (error) return <ErrorState title={t('calendar.error_title')} message={error} onRetry={() => void refresh()} />;
+  if (error && !data) return <ErrorState title={t('calendar.error_title')} message={error} onRetry={() => void refresh()} />;
   if (!data || !plan) return <LoadingState rows={6} />;
 
   const rows = data.bookings.filter((row) => !hidden.includes(row.status));
@@ -140,6 +141,7 @@ export function CalendarSection() {
       moreBookingsText: (count: number) => t('calendar.more_bookings', { count }),
     }}>
       <div className="flex flex-col gap-4">
+        {refreshError ? <RefreshNotice onRetry={() => void refresh()} /> : null}
         <SectionHeader title={t('calendar.title')} description={t('calendar.description')} />
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <Card className="py-4">

@@ -2,6 +2,7 @@ import { categories } from '@wix/categories';
 import { catalogVersioning, collections, products, productsV3 } from '@wix/stores';
 import { auth } from '@wix/essentials';
 import { mediaUrl, type StoreCatalogVersion } from './models';
+import { extractStoreProductImages } from './store-images';
 
 export type CatalogState = StoreCatalogVersion | 'STORES_NOT_INSTALLED';
 
@@ -20,6 +21,7 @@ export interface StoreProduct {
   visible: boolean;
   physical: boolean;
   categoryIds: string[];
+  images: Array<{ src: string; alt: string }>;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -131,14 +133,14 @@ export async function listStoreCategories(): Promise<{ version: CatalogState; ca
   }
 }
 
-export async function getStoreProduct(productId: string): Promise<StoreProduct | null> {
-  const version = await getCatalogState();
+export async function getStoreProduct(productId: string, catalogVersion?: CatalogState): Promise<StoreProduct | null> {
+  const version = catalogVersion ?? await getCatalogState();
   if (version === 'STORES_NOT_INSTALLED' || !productId) return null;
 
   try {
     const product = version === 'V1_CATALOG'
       ? (await auth.elevate(products.getProduct)(productId)).product
-      : await auth.elevate(productsV3.getProduct)(productId);
+      : await auth.elevate(productsV3.getProduct)(productId, { fields: ['MEDIA_ITEMS_INFO'] });
     const row = record(product);
     const price = record(row.price);
     const actualPrice = record(row.actualPrice);
@@ -165,10 +167,62 @@ export async function getStoreProduct(productId: string): Promise<StoreProduct |
       visible: row.visible !== false,
       physical: productType === 'physical',
       categoryIds,
+      images: extractStoreProductImages(row, version),
     };
   } catch (error) {
     return null;
   }
+}
+
+/** Loads linked-product galleries in batches instead of issuing one Get Product call per rental. */
+export async function getStoreProductImageGalleries(
+  productIds: string[],
+  version: StoreCatalogVersion,
+): Promise<Map<string, Array<{ src: string; alt: string }>>> {
+  const galleries = new Map<string, Array<{ src: string; alt: string }>>();
+  const uniqueIds = [...new Set(productIds.filter(Boolean))];
+  for (let offset = 0; offset < uniqueIds.length; offset += 100) {
+    const batch = uniqueIds.slice(offset, offset + 100);
+    const batchStartedAt = Date.now();
+    try {
+      let rows: unknown[];
+      if (version === 'V1_CATALOG') {
+        const result = await auth.elevate(products.queryProducts)().in('_id', batch).limit(batch.length).find();
+        rows = result.items;
+      } else {
+        const result = await auth.elevate(productsV3.queryProducts)(
+            { filter: { _id: { $in: batch } }, cursorPaging: { limit: batch.length } },
+            { fields: ['MEDIA_ITEMS_INFO'] },
+          );
+        rows = result.products ?? [];
+      }
+      for (const product of rows) {
+        const row = record(product);
+        const id = stringValue(row._id) || stringValue(row.id);
+        if (id) galleries.set(id, extractStoreProductImages(row, version));
+      }
+      console.info('[RentalManager catalog timing]', JSON.stringify({
+        event: 'rental_catalog_store_gallery_query',
+        catalogVersion: version,
+        batchIndex: Math.floor(offset / 100) + 1,
+        requestedProducts: batch.length,
+        returnedProducts: rows.length,
+        durationMs: Date.now() - batchStartedAt,
+      }));
+    } catch (error) {
+      // A failed batch is omitted so callers can keep using the rental's saved gallery.
+      console.error('[RentalManager catalog timing]', JSON.stringify({
+        event: 'rental_catalog_store_gallery_query',
+        catalogVersion: version,
+        batchIndex: Math.floor(offset / 100) + 1,
+        requestedProducts: batch.length,
+        durationMs: Date.now() - batchStartedAt,
+        failed: true,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+  return galleries;
 }
 
 export function productMatchesCategory(product: StoreProduct, categoryId: string): boolean {
@@ -189,7 +243,8 @@ function productOption(product: unknown, version: StoreCatalogVersion): StorePro
   if (!id) return null;
   const media = record(row.media);
   // V3 returns `wix:image://` URIs (not the URL its docs describe), so normalise both versions.
-  const image = mediaUrl(version === 'V1_CATALOG'
+  const gallery = extractStoreProductImages(row, version);
+  const image = gallery[0]?.src || mediaUrl(version === 'V1_CATALOG'
     ? stringValue(record(record(media.mainMedia).image).url)
     : stringValue(record(media.main).image) || stringValue(record(media.main).url));
   const price = version === 'V1_CATALOG'
@@ -235,7 +290,7 @@ export async function getStoreProductOption(productId: string): Promise<StorePro
   try {
     const product = version === 'V1_CATALOG'
       ? (await auth.elevate(products.getProduct)(productId)).product
-      : await auth.elevate(productsV3.getProduct)(productId);
+      : await auth.elevate(productsV3.getProduct)(productId, { fields: ['MEDIA_ITEMS_INFO'] });
     return productOption(product, version);
   } catch {
     return null;

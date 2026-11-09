@@ -72,6 +72,8 @@ export function RentalCatalogGrid({
   const [apiLanguage, setApiLanguage] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<string[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [category, setCategory] = useState('');
   const [sort, setSort] = useState<SortOrder>('featured');
   const size = Math.max(1, pageSize);
@@ -93,11 +95,16 @@ export function RentalCatalogGrid({
   useEffect(() => {
     let active = true;
     setLoading(true);
-    const query = category ? `?category=${encodeURIComponent(category)}` : '';
-    request<{ items: CatalogItem[]; categories?: string[]; currency?: string; language?: string }>(`/api/rentals/catalog${query}`)
+    setItems([]);
+    setShown(size);
+    setHasMore(false);
+    const query = new URLSearchParams({ limit: '200' });
+    if (category) query.set('category', category);
+    request<{ items: CatalogItem[]; categories?: string[]; hasMore?: boolean; currency?: string; language?: string }>(`/api/rentals/catalog?${query}`)
       .then((body) => {
         if (!active) return;
         setItems(body.items);
+        setHasMore(Boolean(body.hasMore));
         setCategories(body.categories ?? []);
         setCurrency(body.currency);
         if (body.language) setApiLanguage(body.language);
@@ -107,6 +114,7 @@ export function RentalCatalogGrid({
         // Editor preview without a backend: filter the samples locally instead.
         setItems(category ? samples.filter((item) => item.category === category) : samples);
         setCategories([...new Set(samples.map((item) => item.category))]);
+        setHasMore(false);
         setCurrency('USD');
       })
       .finally(() => {
@@ -148,6 +156,27 @@ export function RentalCatalogGrid({
     if (next === category) return;
     setCategory(next);
     setShown(size);
+  }
+
+  async function loadMore() {
+    if (sorted.length > shown) {
+      setShown((value) => value + size);
+      return;
+    }
+    if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
+    const query = new URLSearchParams({ offset: String(items.length), limit: '200' });
+    if (category) query.set('category', category);
+    try {
+      const body = await request<{ items: CatalogItem[]; hasMore?: boolean }>(`/api/rentals/catalog?${query}`);
+      setItems((current) => [...current, ...body.items]);
+      setHasMore(Boolean(body.hasMore));
+      setShown((value) => value + size);
+    } catch {
+      // Keep the pager available so the visitor can retry this page.
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   // Sort stays visible while a filtered tab has a single item, so the toolbar doesn't jump.
@@ -263,17 +292,18 @@ export function RentalCatalogGrid({
         </ul>
       )}
 
-      {sorted.length > shown ? (
+      {sorted.length > shown || hasMore ? (
         <div className={styles.loadMore}>
           <button
             {...parts?.button}
             type="button"
             className={[styles.pagerButton, parts?.button?.className].filter(Boolean).join(' ')}
-            onClick={() => setShown((value) => value + size)}
+            onClick={loadMore}
+            disabled={loadingMore}
           >
-            {t('load_more')}
+            {loadingMore ? t('loading') : t('load_more')}
           </button>
-          <span className={styles.pagerStatus}>{t('showing_count', { shown: visible.length, total: sorted.length })}</span>
+          {!hasMore ? <span className={styles.pagerStatus}>{t('showing_count', { shown: visible.length, total: sorted.length })}</span> : null}
         </div>
       ) : null}
     </section>

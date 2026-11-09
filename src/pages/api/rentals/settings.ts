@@ -4,14 +4,52 @@ import { merchantOnly } from '../../../rental/guard';
 import { json, readJson, str, int } from '../../../rental/http';
 import { saveSettings } from '../../../rental/merchant';
 import { readPlan } from '../../../rental/plans';
+import { getCurrentAppInstance } from '../../../rental/app-instance';
 
 const merchant = { elevate: true };
 
 export const GET: APIRoute = async () => {
-  const denied = await merchantOnly();
-  if (denied) return denied;
-  const [settings, plan] = await Promise.all([loadSettings(merchant), readPlan(merchant)]);
-  return json({ settings, plan });
+  const startedAt = Date.now();
+  const timings: Record<string, number> = {};
+  let failure: string | undefined;
+  const timed = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+    const stageStartedAt = Date.now();
+    try {
+      return await operation();
+    } finally {
+      timings[name] = Date.now() - stageStartedAt;
+    }
+  };
+
+  try {
+    const denied = await timed('merchantCheckMs', () => merchantOnly());
+    if (denied) return denied;
+
+    const appInstance = await timed('getAppInstanceMs', async () => {
+      try {
+        return await getCurrentAppInstance();
+      } catch (error) {
+        console.error('Unable to read the app instance for rental settings and plan.', error);
+        return null;
+      }
+    });
+    const [settings, plan] = await Promise.all([
+      timed('loadSettingsMs', () => loadSettings(merchant, appInstance)),
+      timed('readPlanMs', () => readPlan(merchant, appInstance)),
+    ]);
+    return json({ settings, plan });
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+    throw error;
+  } finally {
+    console.info('[RentalManager settings timing]', JSON.stringify({
+      event: 'rental_settings_timing',
+      durationMs: Date.now() - startedAt,
+      timings,
+      failed: Boolean(failure),
+      ...(failure ? { error: failure } : {}),
+    }));
+  }
 };
 
 export const POST: APIRoute = async ({ request }) => {

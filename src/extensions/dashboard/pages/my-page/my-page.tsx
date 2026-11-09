@@ -1,5 +1,5 @@
 import { useState, type FC } from 'react';
-import { BookOpenText, CalendarDays, CalendarRange, ChartColumn, ClipboardList, Package, Settings } from 'lucide-react';
+import { BookOpenText, CalendarDays, CalendarRange, ChartColumn, ClipboardList, Loader2, Package, Settings } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { I18nProvider, LanguageSwitcher, useI18n } from '@/i18n';
@@ -15,8 +15,11 @@ import {
   SettingsSection,
   ToastProvider,
   TodaySection,
+  RefreshNotice,
+  ErrorState,
   sections,
   useDashboard,
+  useDashboardRequestPending,
   type SectionId,
 } from '../../sections';
 import 'react-day-picker/style.css';
@@ -39,9 +42,10 @@ function initialSection(): SectionId {
 }
 
 function Shell() {
-  const { plan } = useDashboard();
+  const { plan, loading, loadError, refreshError, reload } = useDashboard();
   const { t, formatDate } = useI18n();
   const [active, setActive] = useState<SectionId>(initialSection);
+  const requestPending = useDashboardRequestPending();
 
   function open(id: SectionId) {
     setActive(id);
@@ -107,7 +111,7 @@ function Shell() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1" aria-busy={requestPending}>
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:px-6 md:py-8">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div className="flex flex-col">
@@ -120,6 +124,8 @@ function Shell() {
               </Badge>
             ) : null}
           </div>
+          {loadError && !loading ? <ErrorState title={t('common.dashboard_load_failed')} message={loadError} onRetry={() => void reload().catch(() => undefined)} /> : null}
+          {refreshError && !loadError ? <RefreshNotice onRetry={() => void reload().catch(() => undefined)} /> : null}
           <MembersAreaNotice />
           {active === 'today' ? <TodaySection onNavigate={open} /> : null}
           {active === 'bookings' ? <BookingsSection /> : null}
@@ -129,6 +135,12 @@ function Shell() {
           {active === 'settings' ? <SettingsSection /> : null}
           {active === 'guide' ? <GuideSection onNavigate={open} /> : null}
         </div>
+        {requestPending ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-white/85" role="status" aria-live="polite">
+            <span className="sr-only">{t('common.refreshing')}</span>
+            <Loader2 className="size-8 animate-spin text-primary" aria-hidden="true" />
+          </div>
+        ) : null}
       </main>
     </div>
   );

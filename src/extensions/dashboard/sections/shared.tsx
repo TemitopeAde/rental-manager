@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AlertCircle, Inbox, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/dashboard/client';
+import { getDashboardRequestCount, readDashboardCache, requestDashboardData, subscribeToDashboardRequests } from '@/dashboard/data-cache';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +52,7 @@ export interface ItemRow {
   leadDays: number;
   status: 'active' | 'hidden' | 'archived';
   storeProductId?: string;
+  images: Array<{ src: string; alt: string }>;
   storeRentalOverride: 'inherit' | 'enabled' | 'disabled';
 }
 
@@ -110,36 +112,64 @@ interface DashboardData {
   canBook: (id: string) => boolean;
   itemName: (id: string) => string;
   money: (amount: number) => string;
+  loading: boolean;
+  loadError: string;
+  refreshError: boolean;
   reload: () => Promise<void>;
 }
 
 const DataContext = createContext<DashboardData | null>(null);
+const settingsKey = '/api/rentals/settings';
+const itemsKey = '/api/rentals/items';
+const categoriesKey = '/api/rentals/store-categories';
+
+type SettingsResponse = { settings: Settings; plan: Plan };
+type ItemsResponse = { items: ItemRow[]; bookableIds: string[] | null };
+type CategoriesResponse = { version: DashboardData['storeCatalogVersion']; categories: StoreCategoryRow[] };
 
 export function DashboardDataProvider({ children }: { children: ReactNode }) {
   const { t, formatMoney: i18nMoney, setLocale } = useI18n();
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [items, setItems] = useState<ItemRow[]>([]);
-  const [bookableIds, setBookableIds] = useState<Set<string> | null>(null);
-  const [storeCategories, setStoreCategories] = useState<StoreCategoryRow[]>([]);
-  const [storeCatalogVersion, setStoreCatalogVersion] = useState<DashboardData['storeCatalogVersion']>('STORES_NOT_INSTALLED');
+  const initialConfig = readDashboardCache<SettingsResponse>(settingsKey);
+  const initialItems = readDashboardCache<ItemsResponse>(itemsKey);
+  const initialCategories = readDashboardCache<CategoriesResponse>(categoriesKey);
+  const [settings, setSettings] = useState<Settings | null>(() => initialConfig?.settings ?? null);
+  const [plan, setPlan] = useState<Plan | null>(() => initialConfig?.plan ?? null);
+  const [items, setItems] = useState<ItemRow[]>(() => initialItems?.items ?? []);
+  const [bookableIds, setBookableIds] = useState<Set<string> | null>(() => initialItems?.bookableIds ? new Set(initialItems.bookableIds) : null);
+  const [storeCategories, setStoreCategories] = useState<StoreCategoryRow[]>(() => initialCategories?.categories ?? []);
+  const [storeCatalogVersion, setStoreCatalogVersion] = useState<DashboardData['storeCatalogVersion']>(() => initialCategories?.version ?? 'STORES_NOT_INSTALLED');
+  const [loading, setLoading] = useState(() => !initialConfig || !initialItems || !initialCategories);
+  const [loadError, setLoadError] = useState('');
+  const [refreshError, setRefreshError] = useState(false);
 
   const reload = useCallback(async () => {
-    const [config, catalog, stores] = await Promise.all([
-      api<{ settings: Settings; plan: Plan }>('/api/rentals/settings'),
-      api<{ items: ItemRow[]; bookableIds: string[] | null }>('/api/rentals/items'),
-      api<{ version: DashboardData['storeCatalogVersion']; categories: StoreCategoryRow[] }>('/api/rentals/store-categories'),
+    const results = await Promise.allSettled([
+      requestDashboardData(settingsKey, () => api<SettingsResponse>(settingsKey)).then((config) => {
+        setSettings(config.settings);
+        setPlan(config.plan);
+        if (config.settings?.language) setLocale(config.settings.language as any);
+      }),
+      requestDashboardData(itemsKey, () => api<ItemsResponse>(itemsKey)).then((catalog) => {
+        setItems(catalog.items);
+        setBookableIds(catalog.bookableIds ? new Set(catalog.bookableIds) : null);
+      }),
+      requestDashboardData(categoriesKey, () => api<CategoriesResponse>(categoriesKey)).then((stores) => {
+        setStoreCategories(stores.categories);
+        setStoreCatalogVersion(stores.version);
+      }),
     ]);
-    setSettings(config.settings);
-    if (config.settings?.language) {
-      setLocale(config.settings.language as any);
+    const failed = results.some((result) => result.status === 'rejected');
+    setRefreshError(failed);
+    const missingData =
+      (results[0]?.status === 'rejected' && readDashboardCache(settingsKey) === undefined) ||
+      (results[1]?.status === 'rejected' && readDashboardCache(itemsKey) === undefined) ||
+      (results[2]?.status === 'rejected' && readDashboardCache(categoriesKey) === undefined);
+    setLoadError(failed && missingData ? 'Could not load some dashboard data.' : '');
+    setLoading(false);
+    if (failed && missingData) {
+      throw new Error('Could not load some dashboard data.');
     }
-    setPlan(config.plan);
-    setItems(catalog.items);
-    setBookableIds(catalog.bookableIds ? new Set(catalog.bookableIds) : null);
-    setStoreCategories(stores.categories);
-    setStoreCatalogVersion(stores.version);
-  }, []);
+  }, [setLocale]);
 
   useEffect(() => {
     reload().catch(() => undefined);
@@ -153,6 +183,9 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
     canBook: (id) => bookableIds === null || bookableIds.has(id),
     storeCategories,
     storeCatalogVersion,
+    loading,
+    loadError,
+    refreshError,
     itemName: (id) => items.find((item) => item._id === id)?.name ?? t('common.unknown_item'),
     money: (amount) => i18nMoney(amount, currency),
     reload,
@@ -167,23 +200,51 @@ export function useDashboard(): DashboardData {
 }
 
 // Loads one endpoint and exposes loading/error state plus a reload.
-export function useResource<T>(load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
+export function useResource<T>(key: string, load: () => Promise<T>) {
+  const [data, setData] = useState<T | null>(() => readDashboardCache<T>(key) ?? null);
   const [error, setError] = useState('');
+  const [refreshError, setRefreshError] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      setData(await load());
+      setData(await requestDashboardData(key, load));
       setError('');
+      setRefreshError(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Something went wrong.');
+      const cached = readDashboardCache<T>(key);
+      if (cached !== undefined) {
+        setData(cached);
+        setRefreshError(true);
+        setError('');
+      } else {
+        setError(reason instanceof Error ? reason.message : 'Something went wrong.');
+        setRefreshError(false);
+      }
     }
     // `load` is an inline arrow per caller; refreshing on identity would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [key]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  return { data, error, refresh };
+  return { data, error, refresh, refreshError };
+}
+
+export function useDashboardRequestPending(): boolean {
+  return useSyncExternalStore(subscribeToDashboardRequests, () => getDashboardRequestCount() > 0, () => false);
+}
+
+export function RefreshNotice({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
+  return (
+    <Alert>
+      <Info />
+      <AlertTitle>{t('common.refresh_failed')}</AlertTitle>
+      <AlertDescription className="flex flex-wrap items-center gap-3">
+        <span>{t('common.refresh_failed_desc')}</span>
+        <Button size="sm" variant="outline" onClick={onRetry}>{t('common.try_again')}</Button>
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 // ---------- Formatting ----------

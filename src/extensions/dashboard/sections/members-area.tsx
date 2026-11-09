@@ -1,55 +1,29 @@
-import { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
-import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { api, post } from '@/dashboard/client';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { api } from '@/dashboard/client';
 import { useI18n } from '@/i18n';
 import { hasMembersAreaApp } from '@/rental/constants';
-import { useToast } from './toast';
+import { ErrorState, RefreshNotice, useResource } from './shared';
 
 // Online bookings stay closed until the site has Wix Members Area, which My Rentals and
-// renter sign-in depend on. This checks on load and offers a one-click install.
+// renter sign-in depend on. This checks on load and displays a notice if missing.
 export function MembersAreaNotice() {
   const { t } = useI18n();
-  const toast = useToast();
-  const [installed, setInstalled] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { data, error, refresh, refreshError } = useResource('/api/rentals/app-instance', () => api<{ installedWixApps: string[] }>('/api/rentals/app-instance'));
+  const installed = data ? hasMembersAreaApp(data.installedWixApps) : null;
 
-  useEffect(() => {
-    api<{ installedWixApps: string[] }>('/api/rentals/app-instance')
-      .then((body) => {
-        const isInstalled = hasMembersAreaApp(body.installedWixApps);
-        setInstalled(isInstalled);
-      })
-      .catch(() => setInstalled(null));
-  }, []);
-
-  async function install() {
-    setBusy(true);
-    try {
-      await post('/api/rentals/members-area', {});
-      setInstalled(true);
-      toast(t('members_area.toast_installed'));
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t('members_area.toast_install_failed'), 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (installed !== false) return null;
+  if (error && !data) return <ErrorState title={t('members_area.error_title')} message={error} onRetry={() => void refresh()} />;
+  if (installed !== false && !refreshError) return null;
   return (
-    <Alert variant="destructive">
-      <Users />
-      <AlertTitle>{t('members_area.title')}</AlertTitle>
-      <AlertDescription>
-        {t('members_area.desc')}
-      </AlertDescription>
-      <AlertAction>
-        <Button size="sm" disabled={busy} onClick={() => void install()}>
-          {busy ? t('members_area.btn_installing') : t('members_area.btn_install')}
-        </Button>
-      </AlertAction>
-    </Alert>
+    <div className="flex flex-col gap-3">
+      {refreshError ? <RefreshNotice onRetry={() => void refresh()} /> : null}
+      {installed === false ? (
+        <Alert variant="destructive">
+          <Users />
+          <AlertTitle>{t('members_area.title')}</AlertTitle>
+          <AlertDescription>{t('members_area.desc')}</AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
   );
 }

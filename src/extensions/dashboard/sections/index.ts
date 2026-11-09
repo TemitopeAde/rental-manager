@@ -5,7 +5,7 @@ export { ItemsSection } from './items';
 export { GuideSection } from './guide';
 export { MembersAreaNotice } from './members-area';
 export { SettingsSection } from './settings';
-export { DashboardDataProvider, useDashboard } from './shared';
+export { DashboardDataProvider, ErrorState, RefreshNotice, useDashboard, useDashboardRequestPending } from './shared';
 export { TodaySection } from './today';
 export { ToastProvider } from './toast';
 

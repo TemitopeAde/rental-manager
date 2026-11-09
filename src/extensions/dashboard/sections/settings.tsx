@@ -29,7 +29,7 @@ function Row({ label, description, children }: { label: string; description?: st
 }
 
 export function SettingsSection() {
-  const { settings: saved, plan, storeCategories, storeCatalogVersion, reload } = useDashboard();
+  const { settings: saved, plan, storeCategories, storeCatalogVersion, reload, loading } = useDashboard();
   const { t, formatDate, locales, setLocale } = useI18n();
   const toast = useToast();
   const [draft, setDraft] = useState<Settings | null>(saved);
@@ -42,7 +42,7 @@ export function SettingsSection() {
   const zones = useMemo(() => timezones(saved?.timezone ?? 'UTC'), [saved?.timezone]);
   const dirty = Boolean(draft && saved && JSON.stringify(draft) !== JSON.stringify(saved));
 
-  if (!draft || !plan) return <LoadingState />;
+  if (loading || !draft || !plan) return <LoadingState />;
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft({ ...draft, [key]: value });
   function setStoreCategory(value: string) {

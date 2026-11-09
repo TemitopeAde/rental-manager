@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Package, Pencil, Plus } from 'lucide-react';
+import { ImagePlus, Package, Pencil, Plus, X } from 'lucide-react';
+import { dashboard } from '@wix/dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -21,11 +22,11 @@ const statusTone: Record<ItemRow['status'], string> = {
 };
 
 export function ItemsSection() {
-  const { items, plan, settings, money, reload, canBook } = useDashboard();
+  const { items, plan, settings, money, reload, canBook, loading } = useDashboard();
   const { t } = useI18n();
   const [editing, setEditing] = useState<ItemRow | 'new' | null>(null);
 
-  if (!plan || !settings) return <LoadingState />;
+  if (loading || !plan || !settings) return <LoadingState />;
 
   const live = items.filter((item) => item.status !== 'archived').length;
   const atLimit = plan.maxItems !== null && live >= plan.maxItems;
@@ -42,7 +43,7 @@ export function ItemsSection() {
     ? `${plan.trialEnded ? t('items.limit_hint_trial_ended') : ''}${
         plan.maxItems === 1
           ? t('items.limit_hint_over_singular')
-          : t('items.limit_hint_over', { count: plan.maxItems })
+          : t('items.limit_hint_over', { count: plan.maxItems ?? 0 })
       }`
     : atLimit
       ? t('items.limit_hint_at_limit')
@@ -176,15 +177,35 @@ function ItemSheet({ item, perItemRules, currency, money, defaults, onClose, onS
     unitCount: 1,
     status: 'active',
     storeProductId: '',
+    images: [],
     storeRentalOverride: 'inherit',
     ...defaults,
   }));
   const [saving, setSaving] = useState(false);
+  const [pickingImage, setPickingImage] = useState(false);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const num = (key: keyof Draft, min = 0) => numberField(draft[key] as number, (value) => set(key, value as never), min);
   const weeklyTooLow = draft.weeklyRate > 0 && draft.dailyRate > 0 && draft.weeklyRate <= draft.dailyRate;
   const rangeInvalid = draft.maxDays < draft.minDays;
+
+  async function selectImage() {
+    setPickingImage(true);
+    try {
+      const selection = await dashboard.openMediaManager({ category: 'IMAGE', multiSelect: false });
+      const file = selection?.items[0];
+      if (!file) return;
+      if (!file.url) {
+        toast(t('items.image_select_failed'), 'error');
+        return;
+      }
+      set('images', [{ src: file.url, alt: file.displayName || draft.name }]);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('items.image_select_failed'), 'error');
+    } finally {
+      setPickingImage(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -247,8 +268,24 @@ function ItemSheet({ item, perItemRules, currency, money, defaults, onClose, onS
                 ...current,
                 storeProductId: product?.id ?? '',
                 name: current.name || product?.name || '',
+                ...(!product ? { images: [] } : {}),
               }))}
             />
+            {!draft.storeProductId ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>{t('items.field_image')}</Label>
+                {draft.images[0] ? (
+                  <div className="flex items-center gap-3 rounded-lg border p-2">
+                    <img src={draft.images[0].src} alt={draft.images[0].alt} className="size-16 rounded-md object-cover" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{draft.images[0].alt}</span>
+                    <Button type="button" size="icon" variant="ghost" aria-label={t('items.image_remove_aria')} onClick={() => set('images', [])}><X /></Button>
+                  </div>
+                ) : null}
+                <Button type="button" variant="outline" className="w-full justify-start" loading={pickingImage} disabled={pickingImage} onClick={() => void selectImage()}>
+                  <ImagePlus data-icon="inline-start" />{draft.images[0] ? t('items.image_change') : t('items.image_select')}
+                </Button>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-1.5">
               <Label>{t('items.field_store_eligibility')}</Label>
               <Select value={draft.storeRentalOverride ?? 'inherit'} onValueChange={(value) => set('storeRentalOverride', value as Draft['storeRentalOverride'])}>

@@ -24,16 +24,53 @@ export type SiteTranslationKey = keyof SiteTranslations;
 
 let cachedSiteLanguage: SupportedLocale | null = null;
 let fetchConfigPromise: Promise<SupportedLocale | null> | null = null;
+const SITE_LANGUAGE_CACHE_KEY = 'rental_manager_site_lang';
+const SITE_LANGUAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readCachedSiteLanguage(): SupportedLocale | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(SITE_LANGUAGE_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as { language?: string; cachedAt?: number };
+    if (
+      typeof cached.language === 'string' &&
+      (supportedLocales as readonly string[]).includes(cached.language) &&
+      typeof cached.cachedAt === 'number' &&
+      Date.now() - cached.cachedAt < SITE_LANGUAGE_CACHE_TTL_MS
+    ) {
+      return cached.language as SupportedLocale;
+    }
+  } catch {
+    // Storage can be disabled or contain an old cache format.
+  }
+  return null;
+}
+
+function cacheSiteLanguage(language: SupportedLocale) {
+  cachedSiteLanguage = language;
+  try {
+    window.localStorage.setItem(SITE_LANGUAGE_CACHE_KEY, JSON.stringify({ language, cachedAt: Date.now() }));
+  } catch {
+    // Storage can be disabled; the in-memory cache still works for this page.
+  }
+}
 
 export async function fetchSiteLanguage(): Promise<SupportedLocale> {
   if (cachedSiteLanguage) return cachedSiteLanguage;
+  const persistedLanguage = readCachedSiteLanguage();
+  if (persistedLanguage) {
+    cachedSiteLanguage = persistedLanguage;
+    return persistedLanguage;
+  }
   if (!fetchConfigPromise) {
     fetchConfigPromise = request<{ language?: string }>('/api/rentals/config')
       .then((res) => {
         if (res.language && (supportedLocales as readonly string[]).includes(res.language)) {
-          cachedSiteLanguage = res.language as SupportedLocale;
+          cacheSiteLanguage(res.language as SupportedLocale);
           return cachedSiteLanguage;
         }
+        cacheSiteLanguage('en');
         return 'en' as SupportedLocale;
       })
       .catch(() => 'en' as SupportedLocale);
@@ -67,6 +104,7 @@ export function resolveSiteLocale(preferred?: string | null): SupportedLocale {
   if (preferred) {
     const code = preferred.slice(0, 2).toLowerCase();
     if ((supportedLocales as readonly string[]).includes(code)) {
+      cacheSiteLanguage(code as SupportedLocale);
       return code as SupportedLocale;
     }
   }
@@ -74,6 +112,12 @@ export function resolveSiteLocale(preferred?: string | null): SupportedLocale {
   // 2. Cached backend settings language
   if (cachedSiteLanguage) {
     return cachedSiteLanguage;
+  }
+
+  const persistedLanguage = readCachedSiteLanguage();
+  if (persistedLanguage) {
+    cachedSiteLanguage = persistedLanguage;
+    return persistedLanguage;
   }
 
   // 3. localStorage if available (set by language switcher)
@@ -152,7 +196,7 @@ export function useSiteI18n(preferredLocale?: string | null) {
   useEffect(() => {
     if (preferredLocale) {
       const resolved = resolveSiteLocale(preferredLocale);
-      cachedSiteLanguage = resolved;
+      cacheSiteLanguage(resolved);
       setLocale(resolved);
       return;
     }

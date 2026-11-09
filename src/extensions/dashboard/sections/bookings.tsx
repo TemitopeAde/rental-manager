@@ -23,6 +23,7 @@ import {
   nextAction,
   numberField,
   SectionHeader,
+  RefreshNotice,
   statusLabel,
   statusOrder,
   StatusBadge,
@@ -140,7 +141,7 @@ export function BookingActionButton({
 export function BookingsSection() {
   const { itemName, money } = useDashboard();
   const { t, formatRange } = useI18n();
-  const { data, error, refresh } = useResource(() => api<{ bookings: BookingRow[] }>('/api/rentals/bookings'));
+  const { data, error, refresh, refreshError } = useResource('/api/rentals/bookings', () => api<{ bookings: BookingRow[] }>('/api/rentals/bookings'));
   const { act, busy } = useBookingActions(refresh);
   const [filter, setFilter] = useState<BookingStatus | 'all' | 'open'>('open');
   const [query, setQuery] = useState('');
@@ -164,7 +165,7 @@ export function BookingsSection() {
   });
   const selected = rows.find((row) => row._id === openId) ?? null;
 
-  if (error) return <ErrorState title={t('bookings.error_title')} message={error} onRetry={() => void refresh()} />;
+  if (error && !data) return <ErrorState title={t('bookings.error_title')} message={error} onRetry={() => void refresh()} />;
   if (!data) return <LoadingState />;
 
   const filters: Array<{ id: BookingStatus | 'all' | 'open'; label: string; count: number }> = [
@@ -175,6 +176,7 @@ export function BookingsSection() {
 
   return (
     <div className="flex flex-col gap-4">
+      {refreshError ? <RefreshNotice onRetry={() => void refresh()} /> : null}
       <SectionHeader
         title={t('bookings.title')}
         description={t('bookings.description')}

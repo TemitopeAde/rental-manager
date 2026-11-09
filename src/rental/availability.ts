@@ -1,4 +1,4 @@
-import { siteCurrency } from './app-instance';
+import { siteCurrency, type CurrentAppInstance } from './app-instance';
 import { collections, ALL_ITEMS } from './constants';
 import { addDays, eachDate, isDateString, todayInTimezone } from './dates';
 import type { Quote, RentalItem, Settings } from './models';
@@ -93,14 +93,22 @@ export const defaultSettings = (): Record<string, unknown> => ({
 
 // Checkout charges the catalog price in the site's currency, so every displayed price uses it too.
 // The stored value is only a fallback for when the site can't be read.
-export async function withSiteCurrency(settings: Settings): Promise<Settings> {
-  const currency = await siteCurrency();
+export async function withSiteCurrency(
+  settings: Settings,
+  appInstance?: CurrentAppInstance | null,
+): Promise<Settings> {
+  const currency = appInstance === undefined
+    ? await siteCurrency()
+    : appInstance?.site?.paymentCurrency ?? '';
   return currency ? { ...settings, currency } : settings;
 }
 
-export async function loadSettings(access: Access): Promise<Settings> {
+export async function loadSettings(access: Access, appInstance?: CurrentAppInstance | null): Promise<Settings> {
   const row = await getRow(collections.settings, 'default', access);
-  return withSiteCurrency(row ? asSettings(row) : asSettings({ _id: 'default', ...defaultSettings() }));
+  return withSiteCurrency(
+    row ? asSettings(row) : asSettings({ _id: 'default', ...defaultSettings() }),
+    appInstance,
+  );
 }
 
 export async function loadItem(itemId: string, access: Access): Promise<RentalItem | null> {

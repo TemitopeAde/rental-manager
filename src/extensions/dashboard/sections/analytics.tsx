@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, ChartColumn, Gauge, Receipt, Wallet } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api } from '@/dashboard/client';
+import { readDashboardCache, requestDashboardData } from '@/dashboard/data-cache';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
-import { ErrorState, formatDay, formatMoney, LoadingState, SectionHeader, StatusBadge, type BookingRow } from './shared';
+import { ErrorState, formatDay, formatMoney, LoadingState, RefreshNotice, SectionHeader, StatusBadge, type BookingRow } from './shared';
 
 type RangeKey = '7d' | '30d' | '90d' | '12m';
 type Bucket = 'day' | 'week' | 'month';
@@ -180,8 +181,10 @@ function Empty({ children }: { children: ReactNode }) {
 export function AnalyticsSection() {
   const { t, locale, formatDay: i18nFormatDay, formatMoney: i18nFormatMoney } = useI18n();
   const [range, setRange] = useState<RangeKey>('30d');
-  const [data, setData] = useState<Analytics | null>(null);
+  const [data, setData] = useState<Analytics | null>(() => readDashboardCache<Analytics>('/api/rentals/analytics?range=30d') ?? null);
   const [error, setError] = useState('');
+  const [refreshError, setRefreshError] = useState(false);
+  const requestVersion = useRef(0);
   const [showTable, setShowTable] = useState(false);
 
   const ranges: Array<{ id: RangeKey; label: string; previous: string }> = [
@@ -192,11 +195,23 @@ export function AnalyticsSection() {
   ];
 
   const load = useCallback(async (next: RangeKey) => {
+    const requestId = ++requestVersion.current;
+    const key = `/api/rentals/analytics?range=${next}`;
+    setData(readDashboardCache<Analytics>(key) ?? null);
+    setError('');
+    setRefreshError(false);
     try {
-      setData(await api<Analytics>(`/api/rentals/analytics?range=${next}`));
-      setError('');
+      const fresh = await requestDashboardData(key, () => api<Analytics>(key));
+      if (requestId === requestVersion.current) setData(fresh);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Something went wrong.');
+      if (requestId !== requestVersion.current) return;
+      const cached = readDashboardCache<Analytics>(key);
+      if (cached) {
+        setData(cached);
+        setRefreshError(true);
+      } else {
+        setError(reason instanceof Error ? reason.message : 'Something went wrong.');
+      }
     }
   }, []);
 
@@ -227,7 +242,7 @@ export function AnalyticsSection() {
     </div>
   );
 
-  if (error) return <div className="flex flex-col gap-4">{header}{picker}<ErrorState title={t('analytics.error_title')} message={error} onRetry={() => void load(range)} /></div>;
+  if (error && !data) return <div className="flex flex-col gap-4">{header}{picker}<ErrorState title={t('analytics.error_title')} message={error} onRetry={() => void load(range)} /></div>;
   if (!data) return <div className="flex flex-col gap-4">{header}{picker}<LoadingState /></div>;
 
   const money = (amount: number) => i18nFormatMoney(amount, data.currency);
@@ -240,6 +255,7 @@ export function AnalyticsSection() {
 
   return (
     <div className="flex flex-col gap-4">
+      {refreshError ? <RefreshNotice onRetry={() => void load(range)} /> : null}
       {header}
       <div className="flex flex-wrap items-center justify-between gap-2">
         {picker}
