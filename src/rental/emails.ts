@@ -198,7 +198,12 @@ export async function emailBookingUpdate(
     };
     const email = messages[action];
     const paragraphs = [`Hi ${escape(after.renter.name || 'there')},`, email.message];
-    if (reason) paragraphs.push(escape(reason));
+    if (reason) {
+      const text = escape(reason.trim()).replace(/\r?\n/g, '<br>');
+      paragraphs.push(
+        `<strong>Reason from the shop:</strong><br><span style="display:block;margin-top:6px;padding:10px 12px;border-left:3px solid #d4d4d4;background:#f7f7f7">${text}</span>`,
+      );
+    }
     const rows = summary(after, itemName, currency);
     if (action === 'returned' && after.lateReturn && after.lateReturn.lateDays > 0) {
       paragraphs.push(

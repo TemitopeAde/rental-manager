@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
 import type { DateRange } from 'react-day-picker';
-import { currentCartV2 } from '@wix/ecom';
 import { ecom } from '@wix/site-ecom';
-import { APP_ID } from '../rental/constants';
 import { post, request } from './client';
 import { addDays, isoDate, partClass } from './format';
 import { useSiteI18n } from './i18n';
@@ -19,8 +17,10 @@ interface QuoteResult {
   quote?: { days: number; rental: number; deposit: number; total: number };
 }
 
-interface HoldResult {
+interface CartResult {
   ok: boolean;
+  /** Where it failed: 'hold' means the dates were taken; 'cart' means Wix rejected the cart line. */
+  stage?: 'input' | 'hold' | 'cart';
   message?: string;
   booking?: { _id: string; itemId: string; quantity: number; reference: string };
 }
@@ -207,7 +207,8 @@ export function RentalBookingForm({
     setBusy(true);
     setMessage(null);
     try {
-      const held = await post<HoldResult>('/api/rentals/hold', {
+      // One request holds the dates, adds the line to the visitor's cart and extends the hold.
+      const held = await post<CartResult>('/api/rentals/cart', {
         itemId: selected,
         startDate,
         endDate,
@@ -215,23 +216,12 @@ export function RentalBookingForm({
         idempotencyKey: holdKey(),
       });
       if (!held.ok || !held.booking) {
-        const notification = notify({ tone: 'error', text: held.message || t('dates_unavailable') });
+        const fallback = held.stage === 'cart' ? t('checkout_error') : t('dates_unavailable');
+        const notification = notify({ tone: 'error', text: held.message || fallback });
         setMessage(notification);
-        reloadAvailability();
+        if (held.stage !== 'cart') reloadAvailability();
         return;
       }
-      await currentCartV2.addLineItemsToCurrentCart({
-        catalogItems: [
-          {
-            catalogReference: {
-              catalogItemId: held.booking.itemId,
-              appId: APP_ID,
-              options: { bookingId: held.booking._id },
-            },
-            quantity: held.booking.quantity,
-          },
-        ],
-      });
       // Updates the site's cart icon and side cart. (currentCartV2.refreshCurrentCart only re-prices the
       // cart on the server, which re-runs our catalog and fee plugins for nothing right after adding.)
       // The item is already in the cart, so a failed UI refresh shouldn't surface as a booking error.
@@ -242,7 +232,6 @@ export function RentalBookingForm({
       holdAttempt.current = null;
       // These dates are held now; show them as taken if the renter books again.
       reloadAvailability();
-      await post('/api/rentals/hold', { action: 'extend', bookingId: held.booking._id }).catch(() => undefined);
       const notification = notify({ tone: 'success', text: t('cart_success', { reference: held.booking.reference }) });
       setMessage(notification);
     } catch (error) {

@@ -45,6 +45,7 @@ export const POST: APIRoute = async ({ request }) => {
       quantity: int(body.quantity, 1),
       renterName: str(body.renterName),
       renterEmail: str(body.renterEmail),
+      renterPhone: str(body.renterPhone),
     });
     return json(result, result.ok ? 201 : 400);
   }
@@ -74,7 +75,12 @@ export const POST: APIRoute = async ({ request }) => {
     return json(result, result.ok ? 200 : 400);
   }
   if (action === 'approve' || action === 'decline' || action === 'pickup' || action === 'returned' || action === 'cancel') {
-    const result = await transition(str(body.reference), action, 'dashboard', str(body.reason));
+    // The reason goes into the renter's email; keep it to a sensible length.
+    const reason = str(body.reason).trim().slice(0, 1000);
+    if ((action === 'decline' || action === 'cancel') && !reason) {
+      return json({ ok: false, message: 'Add a reason for the renter.' }, 400);
+    }
+    const result = await transition(str(body.reference), action, 'dashboard', reason);
     return json(result, result.ok ? 200 : 400);
   }
   return json({ ok: false, message: 'Unknown action.' }, 400);

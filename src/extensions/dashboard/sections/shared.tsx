@@ -34,6 +34,8 @@ export interface BookingRow {
   lateReturn?: { overdueSince: string; lateDays: number; lateHours: number; fee: number; final: boolean; returnedAt?: string; lostFlaggedAt?: string };
   notices?: string[];
   paymentRequests?: Array<{ kind: 'late-fee' | 'extension'; amount: number; linkId: string; url: string; status: 'unpaid' | 'paid' | 'inactive'; at: string }>;
+  /** Why the shop declined or cancelled, as emailed to the renter. */
+  cancelReason?: string;
   changeRequest?: {
     type: 'dates' | 'cancel' | 'extend';
     startDate: string;

@@ -584,6 +584,7 @@ export async function createManualBooking(input: {
   quantity: number;
   renterName: string;
   renterEmail: string;
+  renterPhone?: string;
 }) {
   const plan = await readPlan(merchant);
   const settings = await loadSettings(merchant);
@@ -606,7 +607,7 @@ export async function createManualBooking(input: {
       status: 'confirmed',
       holdExtended: false,
       quote: availability.quote,
-      renter: { name: input.renterName, email: input.renterEmail, phone: '' },
+      renter: { name: input.renterName, email: input.renterEmail, phone: input.renterPhone ?? '' },
       idempotencyKey: `manual-${reference}`,
       refundNeeded: false,
       cartLineItemId: '',

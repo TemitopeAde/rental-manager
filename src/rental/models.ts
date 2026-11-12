@@ -125,6 +125,8 @@ export interface Booking {
   /** Keys of return reminders and alerts already sent for this booking, so each goes out once. */
   notices: string[];
   paymentRequests: PaymentRequest[];
+  /** Why the shop declined or cancelled the booking, as sent to the renter. */
+  cancelReason: string;
 }
 
 export interface Settings {

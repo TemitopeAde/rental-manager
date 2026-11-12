@@ -109,6 +109,7 @@ export function asBooking(row: Row): Booking {
     lateReturn: asLateReturn(row.lateReturn),
     notices: Array.isArray(row.notices) ? row.notices.filter((key): key is string => typeof key === 'string') : [],
     paymentRequests: asPaymentRequests(row.paymentRequests),
+    cancelReason: text(row.cancelReason),
   };
 }
 

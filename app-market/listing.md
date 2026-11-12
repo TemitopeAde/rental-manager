@@ -117,5 +117,5 @@ These are the app's real widgets and dashboard rendered with demo data. *Northli
 - [ ] Add the terms & conditions URL
 - [ ] Record and upload the promo video (optional)
 - [ ] In **App Profile → App Audience → Required Wix products**, select **Wix Members Area**, so Wix won't let a site install the app without it
-- [ ] Add the app permissions: **Manage Email Marketing** (`SCOPE.DC-PROMOTE.EMAIL-MARKETING`), **Read Members** (`SCOPE.DC-MEMBERS.READ-MEMBERS`), **Read Site Owner Email**, **Manage Your App** (`SCOPE.DC.MANAGE-YOUR-APP`), plus `SCOPE.DEV_CENTER.INSTALL-APPS` for the dashboard's Members Area install action
+- [ ] Add the app permissions: **Manage Email Marketing** (`SCOPE.DC-PROMOTE.EMAIL-MARKETING`), **Read Members** (`SCOPE.DC-MEMBERS.READ-MEMBERS`), **Read Contacts** (`SCOPE.DC-CONTACTS.READ-CONTACTS`, for the New booking renter picker), **Read Site Owner Email**, **Manage Your App** (`SCOPE.DC.MANAGE-YOUR-APP`), plus `SCOPE.DEV_CENTER.INSTALL-APPS` for the dashboard's Members Area install action
 - [ ] Check that the plan limits described in pricing match `src/rental/plans.ts`: Basic (1 item, 10 bookings/month), Pro (30 items, 150 bookings/month, manual approval), Business (unlimited, per-item rules, calendar)

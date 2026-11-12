@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,7 +17,6 @@ import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import {
   canCancel,
-  ConfirmButton,
   EmptyState,
   ErrorState,
   isoDay,
@@ -36,6 +36,14 @@ import {
 } from './shared';
 import { useToast } from './toast';
 import { RefundDialog, type RefundKind } from './refund-dialog';
+import { freeUnits, occupiedDates, rangeProblem, startProblem, type ItemAvailability, type RangeProblem } from '@/rental/calendar-rules';
+
+/** A `YYYY-MM-DD` day as a local Date, so the calendar shows the same day. */
+function localDay(iso: string): Date {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1);
+}
+import { ContactPicker, type ContactOption } from './contact-picker';
 
 type ActionResult = { ok: boolean; message?: string; refundOrderId?: string };
 type BookingFilter = BookingStatus | 'all' | 'open';
@@ -91,6 +99,8 @@ export function BookingActionButton({
   busy,
   variant = 'default',
   size = 'default',
+  confirmLabel,
+  askReason = false,
 }: {
   reference: string;
   action: string;
@@ -101,14 +111,25 @@ export function BookingActionButton({
   busy: string | null;
   variant?: 'default' | 'outline' | 'destructive';
   size?: 'default' | 'sm';
+  /** Text for the dialog's confirm button; defaults to `label`. */
+  confirmLabel?: string;
+  /** Require a reason, which is saved on the booking and emailed to the renter. */
+  askReason?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
   const actionKey = `${reference}:${action}`;
   const loading = busy === actionKey;
+  const reasonId = `${actionKey}-reason`;
+  const missingReason = askReason && !reason.trim();
 
   async function confirm() {
-    if (await act(reference, action)) setOpen(false);
+    if (missingReason) return;
+    if (await act(reference, action, askReason ? { reason: reason.trim() } : {})) {
+      setOpen(false);
+      setReason('');
+    }
   }
 
   return (
@@ -128,12 +149,27 @@ export function BookingActionButton({
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
+          {askReason ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={reasonId}>{t('bookings.reason_label')}</Label>
+              <Textarea
+                id={reasonId}
+                rows={4}
+                maxLength={1000}
+                autoFocus
+                placeholder={t('bookings.reason_placeholder')}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t('bookings.reason_hint')}</p>
+            </div>
+          ) : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline" disabled={busy !== null}>{t('common.cancel')}</Button>
             </DialogClose>
-            <Button variant={variant} loading={loading} disabled={busy !== null} onClick={() => void confirm()}>
-              {label}
+            <Button variant={variant} loading={loading} disabled={busy !== null || missingReason} onClick={() => void confirm()}>
+              {confirmLabel ?? label}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -577,8 +613,10 @@ export function BookingSheet({ booking, onClose, act, busy, onChanged }: {
                     {booking.depositOutcome.note ? ` · ${booking.depositOutcome.note}` : ''}
                   </p>
                 ) : null}
-                {booking.ecomOrderId ? (
-                  <p className="text-xs text-muted-foreground">{t('bookings.sheet_wix_order', { orderId: booking.ecomOrderId })}</p>
+                {booking.status === 'cancelled' && booking.cancelReason ? (
+                  <p className="text-xs whitespace-pre-line text-muted-foreground">
+                    <span className="font-medium text-foreground">{t('bookings.sheet_cancel_reason')}</span> {booking.cancelReason}
+                  </p>
                 ) : null}
               </section>
 
@@ -693,18 +731,23 @@ export function BookingSheet({ booking, onClose, act, busy, onChanged }: {
                   act={act}
                   busy={busy}
                   variant="outline"
+                  askReason
                 />
               ) : null}
               {booking.status === 'active' || booking.status === 'overdue' ? (
                 <MarkLostButton booking={booking} act={act} busy={busy} />
               ) : null}
               {canCancel(booking.status) ? (
-                <ConfirmButton
+                <BookingActionButton
+                  reference={booking.reference}
+                  action="cancel"
                   label={t('action.cancel_booking')}
-                  confirmLabel={t('action.cancel_confirm')}
-                  loading={busy === `${booking.reference}:cancel`}
-                  disabled={busy !== null}
-                  onConfirm={() => void act(booking.reference, 'cancel')}
+                  title={t('bookings.dialog_cancel_title', { reference: booking.reference })}
+                  description={t('bookings.dialog_cancel_desc')}
+                  act={act}
+                  busy={busy}
+                  variant="destructive"
+                  askReason
                 />
               ) : null}
             </SheetFooter>
@@ -725,29 +768,85 @@ export function BookingSheet({ booking, onClose, act, busy, onChanged }: {
 }
 
 function NewBookingSheet({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => Promise<void> }) {
-  const { items } = useDashboard();
+  const { items, canBook } = useDashboard();
   const { t, formatRange } = useI18n();
   const toast = useToast();
+  // Only active items can be booked; ones past the plan's item limit are listed but can't be picked.
   const active = items.filter((item) => item.status === 'active');
+  const bookable = active.filter((item) => canBook(item._id));
   const [itemId, setItemId] = useState('');
   const [range, setRange] = useState<DateRange | undefined>();
   const [quantity, setQuantity] = useState(1);
-  const [renterName, setRenterName] = useState('');
-  const [renterEmail, setRenterEmail] = useState('');
+  const [renter, setRenter] = useState<ContactOption | null>(null);
   const [saving, setSaving] = useState(false);
+  const [availability, setAvailability] = useState<ItemAvailability | null>(null);
+  const [availabilityState, setAvailabilityState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [availabilityVersion, setAvailabilityVersion] = useState(0);
 
-  const chosen = itemId || active[0]?._id || '';
-  const ready = Boolean(chosen && range?.from && range.to && renterName);
+  const chosen = bookable.some((item) => item._id === itemId) ? itemId : bookable[0]?._id ?? '';
+
+  // Booked, closed and out-of-range days for the chosen item. The server applies the same rules
+  // (calendar-rules), so a day greyed out here is one it would refuse.
+  useEffect(() => {
+    if (!open || !chosen) return;
+    let live = true;
+    setAvailability(null);
+    setAvailabilityState('loading');
+    api<{ availability: ItemAvailability }>(`/api/rentals/availability?itemId=${encodeURIComponent(chosen)}`)
+      .then((body) => {
+        if (!live) return;
+        setAvailability(body.availability);
+        setAvailabilityState('ready');
+      })
+      .catch(() => { if (live) setAvailabilityState('error'); });
+    return () => { live = false; };
+  }, [open, chosen, availabilityVersion]);
+
+  // A new item has its own calendar, so earlier dates no longer apply.
+  useEffect(() => {
+    setRange(undefined);
+    setQuantity(1);
+  }, [chosen]);
+
+  const startDate = range?.from ? isoDay(range.from) : '';
+  const endDate = range?.to ? isoDay(range.to) : '';
+  // The most units free on every day the chosen range would hold (or the item's stock before dates are picked).
+  const maxQuantity = availability
+    ? Math.max(1, startDate && endDate
+      ? Math.min(...occupiedDates(startDate, endDate, availability.countReturnDay, availability.bufferDays).occupied.map((date) => freeUnits(availability, date)))
+      : availability.unitCount)
+    : 1;
+  const problem: RangeProblem | null = availability && startDate && endDate ? rangeProblem(availability, startDate, endDate, quantity) : null;
+  const ready = Boolean(chosen && availability?.bookable && startDate && endDate && renter && !problem);
+
+  // Same rule as the site calendar: a day stays clickable if it can start a rental, or end the one being picked.
+  const pickup = range?.from && !range.to ? isoDay(range.from) : '';
+  const unavailable = (date: Date) => {
+    if (!availability) return true;
+    const day = isoDay(date);
+    if (!startProblem(availability, day, 1)) return false;
+    return !(pickup && day >= pickup && !rangeProblem(availability, pickup, day, 1));
+  };
+
+  function selectRange(next: DateRange | undefined, clicked: Date) {
+    if (availability && next?.from && next.to) {
+      // Can't end here (e.g. a booked day in between): start a new pickup on the clicked day if it can be one.
+      if (rangeProblem(availability, isoDay(next.from), isoDay(next.to), 1)) {
+        setRange(startProblem(availability, isoDay(clicked), 1) ? undefined : { from: clicked, to: undefined });
+        return;
+      }
+    }
+    setRange(next);
+  }
 
   function reset() {
     setRange(undefined);
     setQuantity(1);
-    setRenterName('');
-    setRenterEmail('');
+    setRenter(null);
   }
 
   async function create() {
-    if (!range?.from || !range.to) return;
+    if (!range?.from || !range.to || !renter) return;
     setSaving(true);
     try {
       const result = await post<{ ok: boolean; message?: string; booking?: { reference: string } }>('/api/rentals/bookings', {
@@ -756,15 +855,19 @@ function NewBookingSheet({ open, onClose, onCreated }: { open: boolean; onClose:
         startDate: isoDay(range.from),
         endDate: isoDay(range.to),
         quantity,
-        renterName,
-        renterEmail,
+        renterName: renter.name || renter.email,
+        renterEmail: renter.email,
+        renterPhone: renter.phone,
       });
       if (!result.ok) {
         toast(result.message || t('bookings.toast_create_failed'), 'error');
+        // Someone may have just booked these dates; show the latest calendar.
+        setAvailabilityVersion((version) => version + 1);
         return;
       }
       toast(t('bookings.toast_created', { reference: result.booking?.reference ?? '' }));
       reset();
+      setAvailabilityVersion((version) => version + 1);
       onClose();
       await onCreated();
     } catch (error) {
@@ -774,6 +877,9 @@ function NewBookingSheet({ open, onClose, onCreated }: { open: boolean; onClose:
     }
   }
 
+  const earliest = availability ? localDay(availability.earliestStart) : new Date();
+  const latest = availability ? localDay(availability.latestStart) : undefined;
+
   return (
     <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-md">
@@ -781,8 +887,8 @@ function NewBookingSheet({ open, onClose, onCreated }: { open: boolean; onClose:
           <SheetTitle>{t('bookings.new_title')}</SheetTitle>
           <SheetDescription>{t('bookings.new_desc')}</SheetDescription>
         </SheetHeader>
-        {active.length === 0 ? (
-          <p className="px-4 text-sm text-muted-foreground">{t('bookings.new_need_item')}</p>
+        {bookable.length === 0 ? (
+          <p className="px-4 text-sm text-muted-foreground">{active.length ? t('bookings.new_no_bookable') : t('bookings.new_need_item')}</p>
         ) : (
           <div className="flex flex-col gap-4 px-4">
             <div className="flex flex-col gap-1.5">
@@ -790,22 +896,58 @@ function NewBookingSheet({ open, onClose, onCreated }: { open: boolean; onClose:
               <Select value={chosen} onValueChange={(value) => setItemId(value)}>
                 <SelectTrigger className="w-full"><SelectValue placeholder={t('bookings.new_choose_item')} /></SelectTrigger>
                 <SelectContent>
-                  {active.map((item) => <SelectItem key={item._id} value={item._id}>{item.name}</SelectItem>)}
+                  {active.map((item) => (
+                    <SelectItem key={item._id} value={item._id} disabled={!canBook(item._id)}>
+                      {item.name}{canBook(item._id) ? '' : ` · ${t('status.over_limit')}`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t('bookings.new_dates')}</Label>
-              <div className="rounded-lg border p-2">
-                <DayPicker mode="range" selected={range} onSelect={setRange} disabled={{ before: new Date() }} excludeDisabled />
+              <div className="relative rounded-lg border p-2">
+                {availabilityState === 'error' ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
+                    {t('bookings.new_availability_failed')}
+                    <Button size="sm" variant="outline" onClick={() => setAvailabilityVersion((version) => version + 1)}>{t('common.try_again')}</Button>
+                  </div>
+                ) : availability && !availability.bookable ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">{t('bookings.new_item_unbookable')}</p>
+                ) : (
+                  <DayPicker
+                    mode="range"
+                    selected={range}
+                    onSelect={selectRange}
+                    disabled={[{ before: earliest }, ...(latest ? [{ after: latest }] : []), unavailable]}
+                    excludeDisabled
+                    resetOnSelect
+                    startMonth={earliest}
+                    endMonth={latest}
+                    defaultMonth={range?.from ?? earliest}
+                    className={cn(availabilityState === 'loading' && 'pointer-events-none opacity-50')}
+                  />
+                )}
+                {availabilityState === 'loading' ? (
+                  <span className="absolute inset-x-0 top-1/2 text-center text-xs text-muted-foreground">{t('bookings.new_loading_availability')}</span>
+                ) : null}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {range?.from && range.to ? formatRange(isoDay(range.from), isoDay(range.to)) : t('bookings.new_dates_hint')}
+              <p className={cn('text-xs', problem ? 'text-destructive' : 'text-muted-foreground')} role={problem ? 'alert' : undefined}>
+                {problem
+                  ? t(`bookings.new_problem_${problem}`, { min: availability?.minDays ?? 1, max: availability?.maxDays ?? 1 })
+                  : startDate && endDate
+                    ? formatRange(startDate, endDate)
+                    : t('bookings.new_dates_hint')}
               </p>
             </div>
-            <TextField id="new-qty" label={t('bookings.new_quantity')} {...numberField(quantity, setQuantity, 1)} />
-            <TextField id="new-name" label={t('bookings.new_renter_name')} value={renterName} onChange={(event) => setRenterName(event.target.value)} />
-            <TextField id="new-email" label={t('bookings.new_renter_email')} type="email" value={renterEmail} onChange={(event) => setRenterEmail(event.target.value)} />
+            <TextField
+              id="new-qty"
+              label={t('bookings.new_quantity')}
+              hint={availability ? t('bookings.new_units_free', { count: maxQuantity }) : undefined}
+              {...numberField(quantity, (value) => setQuantity(Math.min(maxQuantity, Math.max(1, value))), 1)}
+              max={maxQuantity}
+            />
+            <ContactPicker id="new-renter" value={renter} onChange={setRenter} />
           </div>
         )}
         <SheetFooter>

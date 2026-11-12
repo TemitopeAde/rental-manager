@@ -148,7 +148,7 @@ export async function transition(
   if (!row) return { ok: false as const, message: 'Booking not found.' };
   if (action === 'decline' || action === 'cancel') {
     await releaseUnits(booking._id);
-    const updated = await saveStatus(row, 'cancelled');
+    const updated = await saveStatus(row, 'cancelled', reason ? { cancelReason: reason } : {});
     const refund = booking.ecomOrderId
       ? ` Refund the payment on Wix order ${booking.ecomOrderId}.`
       : '';
