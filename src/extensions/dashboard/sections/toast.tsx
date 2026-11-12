@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
+import { readableError } from '@/lib/error-text';
 
 type Tone = 'success' | 'error' | 'info';
 interface Toast { id: number; tone: Tone; text: string }
@@ -18,7 +19,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback((text: string, tone: Tone = 'success') => {
     const id = Date.now() + Math.random();
-    setToasts((current) => [...current.slice(-2), { id, tone, text }]);
+    // Error text can be a raw Wix error dump; show only its message.
+    const shown = tone === 'error' ? readableError(text) : text;
+    setToasts((current) => [...current.slice(-2), { id, tone, text: shown }]);
     setTimeout(() => dismiss(id), tone === 'error' ? 8000 : 4500);
   }, [dismiss]);
 

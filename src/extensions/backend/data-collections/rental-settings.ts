@@ -22,6 +22,7 @@ export default {
     { key: 'currency', displayName: 'Currency', type: 'TEXT' },
     { key: 'storeCategoryId', displayName: 'Wix Store Rental Category ID', type: 'TEXT' },
     { key: 'storeCategoryName', displayName: 'Wix Store Rental Category Name', type: 'TEXT' },
+    { key: 'storeCategories', displayName: 'Wix Store Rental Categories', type: 'ARRAY' },
     { key: 'storeCategoryVersion', displayName: 'Wix Store Catalog Version', type: 'TEXT' },
   ],
   dataPermissions: {

@@ -28,7 +28,7 @@ const sample: CatalogItem = {
 
 type State =
   | { status: 'loading' }
-  | { status: 'ready'; item: CatalogItem; currency?: string }
+  | { status: 'ready'; item: CatalogItem; currency?: string; orderDeposit?: number }
   | { status: 'missing'; message: string };
 
 export function RentalDetails({
@@ -83,9 +83,9 @@ export function RentalDetails({
       const key = urlSlug || itemSlug;
       if (key) {
         try {
-          const body = await request<{ item: CatalogItem; currency?: string; language?: string }>(`/api/rentals/item?slug=${encodeURIComponent(key)}`);
+          const body = await request<{ item: CatalogItem; currency?: string; language?: string; orderDeposit?: number }>(`/api/rentals/item?slug=${encodeURIComponent(key)}`);
           if (body.language) setApiLanguage(body.language);
-          settle({ status: 'ready', item: body.item, currency: body.currency });
+          settle({ status: 'ready', item: body.item, currency: body.currency, orderDeposit: body.orderDeposit });
           return;
         } catch (error) {
           // A visitor following a stale link gets a clear message; a bad fixed slug in the
@@ -97,11 +97,11 @@ export function RentalDetails({
         }
       }
       try {
-        const body = await request<{ items: CatalogItem[]; currency?: string; language?: string }>('/api/rentals/catalog');
+        const body = await request<{ items: CatalogItem[]; currency?: string; language?: string; orderDeposit?: number }>('/api/rentals/catalog');
         if (body.language) setApiLanguage(body.language);
         const first = body.items[0];
         settle(first
-          ? { status: 'ready', item: first, currency: body.currency }
+          ? { status: 'ready', item: first, currency: body.currency, orderDeposit: body.orderDeposit }
           : { status: 'missing', message: t('empty_catalog') });
       } catch {
         settle({ status: 'ready', item: sample, currency: 'USD' });
@@ -153,6 +153,7 @@ export function RentalDetails({
   }
 
   const { item, currency } = state;
+  const orderDeposit = Number(state.orderDeposit) > 0 ? Number(state.orderDeposit) : 0;
   return (
     <div className={styles.details} style={sizeStyle} dir={isRtl ? 'rtl' : 'ltr'}>
       {back ? <nav className={styles.breadcrumb} aria-label={t('breadcrumb_label')}>{back}</nav> : null}
@@ -173,6 +174,7 @@ export function RentalDetails({
           </div>
           <ul className={styles.facts}>
             {showDeposit && item.depositAmount ? <li>{money(item.depositAmount, currency)} {t('refundable_deposit')}</li> : null}
+            {showDeposit && orderDeposit > 0 ? <li>{t('order_deposit_rate', { amount: money(orderDeposit, currency) })}</li> : null}
             {item.minDays && item.minDays > 1 ? <li>{t('min_days', { count: item.minDays })}</li> : null}
             {item.maxDays ? <li>{t('up_to_days', { count: item.maxDays })}</li> : null}
           </ul>

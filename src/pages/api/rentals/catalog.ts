@@ -4,6 +4,8 @@ import { loadSettings } from '../../../rental/availability';
 import { json, str } from '../../../rental/http';
 import { bookableItemIds, readPlan } from '../../../rental/plans';
 import { getCurrentAppInstance } from '../../../rental/app-instance';
+import { orderDepositAmount } from '../../../rental/deposit-rules';
+import { kickReturnSweep } from '../../../rental/returns';
 
 // Items over the plan's limit stay in the dashboard but are left out here, so renters can't start a booking.
 export const GET: APIRoute = async ({ request }) => {
@@ -21,6 +23,8 @@ export const GET: APIRoute = async ({ request }) => {
   };
 
   const url = new URL(request.url);
+  // Storefront traffic keeps overdue tracking current between dashboard visits.
+  kickReturnSweep();
   try {
     const category = str(url.searchParams.get('category')) || undefined;
     const offset = Math.max(0, Number.parseInt(url.searchParams.get('offset') || '0', 10) || 0);
@@ -49,10 +53,13 @@ export const GET: APIRoute = async ({ request }) => {
     const categories = offset === 0
       ? await timed('listCategoriesMs', () => listCategories(allowed))
       : [];
-    const visibleItems = allowed ? items.filter((item) => allowed.has(item._id)) : items;
+    const orderDeposit = orderDepositAmount(settings, plan.orderDeposit);
+    // With a per-order deposit, items carry none; the form shows the order deposit instead.
+    const visibleItems = (allowed ? items.filter((item) => allowed.has(item._id)) : items)
+      .map((item) => (orderDeposit > 0 ? { ...item, depositAmount: 0 } : item));
     counts.visibleItems = visibleItems.length;
     counts.categories = categories.length;
-    return json({ items: visibleItems, categories, hasMore: rawItems.hasMore, currency: settings.currency, language: settings.language });
+    return json({ items: visibleItems, categories, hasMore: rawItems.hasMore, currency: settings.currency, language: settings.language, orderDeposit });
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
     throw error;

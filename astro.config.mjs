@@ -14,6 +14,8 @@ export default defineConfig({
     schema: {
       LIFECYCLE_SHEETS_WEBHOOK_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
       LIFECYCLE_SHEETS_WEBHOOK_SECRET: envField.string({ context: 'server', access: 'secret', optional: true }),
+      // "DEVELOPMENT" unlocks every plan feature for testing; anything else (or unset) is production.
+      WIX_ENVIRONMENT: envField.string({ context: 'server', access: 'secret', optional: true }),
     },
   },
   image: { domains: ["static.wixstatic.com"] },

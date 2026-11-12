@@ -2,6 +2,7 @@ import { collections } from './constants';
 import { findBooking, audit } from './actions';
 import { loadItem, loadSettings } from './availability';
 import { emailRequestReceived } from './emails';
+import { checkExtension } from './late-returns';
 import { asBooking, quoteRental } from './holds';
 import type { Booking, DateChangeRequest } from './models';
 import type { SiteMember } from './guard';
@@ -11,6 +12,8 @@ const merchant = { elevate: true };
 
 // Bookings a renter can change: paid for, and not yet picked up.
 const changeable = ['pending', 'confirmed'];
+// Bookings a renter can ask to keep longer: out on rent, late or not.
+const extendable = ['active', 'overdue'];
 
 export function ownsBooking(booking: Booking, member: SiteMember): boolean {
   if (booking.memberId) return booking.memberId === member.memberId;
@@ -106,7 +109,13 @@ export async function quoteDateChange(reference: string, startDate: string, endD
   }
   const quoted = await quoteRental({ itemId: booking.itemId, startDate, endDate, quantity: booking.quantity }, booking._id);
   if (!quoted.ok || !quoted.quote) return { ok: false as const, status: 400, message: quoted.message };
-  return { ok: true as const, status: 200, booking, quote: quoted.quote, difference: quoted.quote.total - booking.quote.total };
+  // The deposit was already paid, so a date change only reprices the rental (matches resolveChangeRequest).
+  const quote = {
+    ...quoted.quote,
+    deposit: booking.quote.deposit,
+    total: Math.round((quoted.quote.rental + booking.quote.deposit) * 100) / 100,
+  };
+  return { ok: true as const, status: 200, booking, quote, difference: quote.total - booking.quote.total };
 }
 
 export async function requestDateChange(reference: string, startDate: string, endDate: string, member: SiteMember) {
@@ -115,5 +124,26 @@ export async function requestDateChange(reference: string, startDate: string, en
   const result = await fileRequest(quoted.booking, { type: 'dates', startDate, endDate, quote: quoted.quote });
   return result.ok
     ? { ...result, message: 'Request sent. The shop will confirm your new dates by email.' }
+    : result;
+}
+
+// Prices keeping a rental that is out until a later return date.
+export async function quoteExtension(reference: string, endDate: string, member: SiteMember) {
+  const booking = await ownedBooking(reference, member);
+  if (!booking) return { ok: false as const, status: 404, message: 'Booking not found.' };
+  if (!extendable.includes(booking.status)) {
+    return { ok: false as const, status: 400, message: 'Only a rental you have picked up can be extended.' };
+  }
+  const check = await checkExtension(booking, endDate);
+  if (!check.ok || !check.quote) return { ok: false as const, status: 400, message: check.message };
+  return { ok: true as const, status: 200, booking, quote: check.quote, difference: check.quote.total - booking.quote.total };
+}
+
+export async function requestExtension(reference: string, endDate: string, member: SiteMember) {
+  const quoted = await quoteExtension(reference, endDate, member);
+  if (!quoted.ok) return quoted;
+  const result = await fileRequest(quoted.booking, { type: 'extend', startDate: quoted.booking.startDate, endDate, quote: quoted.quote });
+  return result.ok
+    ? { ...result, message: 'Extension requested. The shop will confirm by email.' }
     : result;
 }

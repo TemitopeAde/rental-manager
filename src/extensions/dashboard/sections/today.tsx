@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CalendarClock, Hourglass } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CalendarClock, CalendarX2, Hourglass, MailCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/dashboard/client';
 import { requestDashboardData } from '@/dashboard/data-cache';
 import { useI18n } from '@/i18n';
 import { BookingActionButton, BookingSheet, useBookingActions } from './bookings';
+import { SetupChecklist } from './setup-checklist';
 import {
   ErrorState,
   isoDay,
@@ -24,10 +25,12 @@ interface TodayBoard {
   pickups: BookingRow[];
   returns: BookingRow[];
   overdue: BookingRow[];
+  /** Upcoming rentals an overdue item may hold up, with the overdue references holding it. */
+  atRisk?: Array<{ booking: BookingRow; blockedBy: string[] }>;
 }
 
-export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'calendar') => void }) {
-  const { itemName } = useDashboard();
+export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'calendar' | 'items' | 'settings' | 'guide') => void }) {
+  const { itemName, money } = useDashboard();
   const { t, formatDay, formatRange } = useI18n();
   const { data, error, refresh, refreshError } = useResource('/api/rentals/today-board', async () => {
     const [board, all] = await Promise.all([
@@ -48,9 +51,21 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
   const upcoming = bookings
     .filter((row) => row.status === 'confirmed' && row.startDate > board.date && row.startDate <= weekAhead)
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
-  const selected = bookings.find((row) => row._id === openId) ?? null;
+  const atRisk = board.atRisk ?? [];
+  const selected = [...bookings, ...board.overdue, ...atRisk.map((risk) => risk.booking)].find((row) => row._id === openId) ?? null;
+
+  // "3 days late · $60 late fee · may be lost", for overdue rows.
+  const lateDetail = (booking: BookingRow) => {
+    const late = booking.lateReturn;
+    if (!late || booking.status !== 'overdue') return '';
+    const parts = [late.lateDays === 1 ? t('today.late_one_day') : t('today.late_days', { count: late.lateDays })];
+    if (late.fee > 0) parts.push(t('today.late_fee', { amount: money(late.fee) }));
+    if (late.lostFlaggedAt) parts.push(t('today.may_be_lost'));
+    return parts.join(' · ');
+  };
 
   const row = (booking: BookingRow) => {
+    const detail = lateDetail(booking);
     const next = nextAction(booking.status, t);
     return (
       <li key={booking._id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
@@ -59,6 +74,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
           <span className="truncate text-xs text-muted-foreground">
             {itemName(booking.itemId)}{booking.quantity > 1 ? ` × ${booking.quantity}` : ''} · {booking.reference}
           </span>
+          {detail ? <span className="truncate text-xs font-medium text-red-700 dark:text-red-300">{detail}</span> : null}
         </button>
         {next ? (
           next.action === 'approve' ? (
@@ -91,6 +107,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
   return (
     <div className="flex flex-col gap-5">
       {refreshError ? <RefreshNotice onRetry={() => void refresh()} /> : null}
+      <SetupChecklist onNavigate={onNavigate} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label={t('today.stat_pickups')} value={board.pickups.length} icon={ArrowUpFromLine} />
         <StatCard label={t('today.stat_returns')} value={board.returns.length} icon={ArrowDownToLine} tone="success" />
@@ -122,6 +139,50 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
           <CardContent>
             <ul className="divide-y divide-red-200/70 dark:divide-red-500/20">
               {board.overdue.map((booking) => row(booking))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {atRisk.length > 0 ? (
+        <Card className="border-amber-300 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
+              <CalendarX2 className="size-4" />{t('today.at_risk_title')}
+            </CardTitle>
+            <CardDescription>{t('today.at_risk_desc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-amber-200/70 dark:divide-amber-500/20">
+              {atRisk.map(({ booking, blockedBy }) => (
+                <li key={booking._id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                  <button type="button" className="flex min-w-0 flex-col text-left hover:underline" onClick={() => setOpenId(booking._id)}>
+                    <span className="truncate font-medium">{booking.renter.name || booking.reference}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {t('today.at_risk_line', {
+                        item: itemName(booking.itemId),
+                        date: formatDay(booking.startDate, { weekday: 'short', month: 'short', day: 'numeric' }),
+                        references: blockedBy.join(', '),
+                      })}
+                    </span>
+                  </button>
+                  {booking.notices?.includes('delay-warned') ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                      <MailCheck className="size-3.5" />{t('today.at_risk_warned')}
+                    </span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={busy === `${booking.reference}:warn-delay`}
+                      disabled={busy !== null || !booking.renter.email}
+                      onClick={() => void act(booking.reference, 'warn-delay')}
+                    >
+                      {t('today.at_risk_warn')}
+                    </Button>
+                  )}
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>
@@ -179,7 +240,7 @@ export function TodaySection({ onNavigate }: { onNavigate: (id: 'bookings' | 'ca
         </CardContent>
       </Card>
 
-      <BookingSheet key={selected?._id} booking={selected} onClose={() => setOpenId(null)} act={act} busy={busy} />
+      <BookingSheet key={selected?._id} booking={selected} onClose={() => setOpenId(null)} act={act} busy={busy} onChanged={refresh} />
     </div>
   );
 }

@@ -51,7 +51,7 @@ describe('totals', () => {
   });
 
   it('is all zeros with no bookings', () => {
-    assert.deepEqual(totals([]), { revenue: 0, bookings: 0, averageValue: 0, averageDays: 0, depositsKept: 0, cancelled: 0 });
+    assert.deepEqual(totals([]), { revenue: 0, bookings: 0, averageValue: 0, averageDays: 0, depositsKept: 0, cancelled: 0, lateReturns: 0, lateFees: 0 });
   });
 });
 

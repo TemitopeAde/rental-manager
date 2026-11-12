@@ -29,6 +29,7 @@ const chipTone: Partial<Record<BookingStatus, string>> = {
   active: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200',
   overdue: 'bg-red-100 text-red-900 dark:bg-red-500/20 dark:text-red-200',
   returned: 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300',
+  lost: 'bg-red-200 text-red-950 line-through dark:bg-red-500/30 dark:text-red-100',
 };
 
 function onDay(rows: BookingRow[], iso: string) {
@@ -210,7 +211,7 @@ export function CalendarSection() {
           </Card>
         </div>
 
-        <BookingSheet key={selected?._id} booking={selected} onClose={() => setOpenId(null)} act={act} busy={busy} />
+        <BookingSheet key={selected?._id} booking={selected} onClose={() => setOpenId(null)} act={act} busy={busy} onChanged={refresh} />
       </div>
     </MonthData.Provider>
   );

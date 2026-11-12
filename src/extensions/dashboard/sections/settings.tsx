@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CheckCircle2, Crown } from 'lucide-react';
+import { CheckCircle2, ChevronsUpDown, Crown, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { post } from '@/dashboard/client';
 import { useI18n } from '@/i18n';
 import { LoadingState, numberField, SectionHeader, TextField, useDashboard, type Settings } from './shared';
 import { useToast } from './toast';
+import { BlockedDatesCard } from './blocked-dates';
+import { isEmailAddress } from '@/rental/notify-rules';
 
 function timezones(current: string): string[] {
   const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') ?? [];
@@ -45,20 +49,28 @@ export function SettingsSection() {
   if (loading || !draft || !plan) return <LoadingState />;
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setDraft({ ...draft, [key]: value });
-  function setStoreCategory(value: string) {
+  function toggleStoreCategory(id: string) {
     if (!draft) return;
-    if (value === '__none') {
-      setDraft({ ...draft, storeCategoryId: '', storeCategoryName: '', storeCategoryVersion: undefined });
-      return;
-    }
-    const category = storeCategories.find((entry) => entry.id === value);
+    const isSelected = draft.storeCategories.some((entry) => entry.id === id);
+    const category = storeCategories.find((entry) => entry.id === id);
+    const next = isSelected
+      ? draft.storeCategories.filter((entry) => entry.id !== id)
+      : category
+        ? [...draft.storeCategories, { id: category.id, name: category.name }]
+        : draft.storeCategories;
     setDraft({
       ...draft,
-      storeCategoryId: category?.id ?? '',
-      storeCategoryName: category?.name ?? '',
-      storeCategoryVersion: category?.version,
+      storeCategories: next,
+      storeCategoryVersion: next.length ? category?.version ?? draft.storeCategoryVersion : undefined,
     });
   }
+  function clearStoreCategories() {
+    if (!draft) return;
+    setDraft({ ...draft, storeCategories: [], storeCategoryVersion: undefined });
+  }
+  // Show the store's current name for a category; fall back to the name saved with it.
+  const categoryName = (category: { id: string; name: string }) =>
+    storeCategories.find((entry) => entry.id === category.id)?.name || category.name || category.id;
   const num = (key: 'defaultBufferDays' | 'defaultLeadDays' | 'defaultMinDays' | 'defaultMaxDays', min = 0) =>
     numberField(draft[key], (value) => set(key, value), min);
 
@@ -80,6 +92,7 @@ export function SettingsSection() {
     plan.maxItems === null ? t('settings.limit_unlimited_items') : t('settings.limit_items', { count: plan.maxItems }),
     plan.maxBookingsPerMonth === null ? t('settings.limit_unlimited_bookings') : t('settings.limit_bookings', { count: plan.maxBookingsPerMonth }),
     plan.manualApproval ? t('settings.limit_manual_approval') : null,
+    plan.orderDeposit ? t('settings.limit_order_deposit') : null,
     plan.perItemRules ? t('settings.limit_item_rules') : null,
     plan.calendar ? t('settings.limit_calendar') : null,
   ].filter(Boolean);
@@ -148,17 +161,65 @@ export function SettingsSection() {
                 <>
                   <div className="flex flex-col gap-1.5">
                     <Label>{t('settings.rental_category_label')}</Label>
-                    <Select value={draft.storeCategoryId || '__none'} onValueChange={setStoreCategory}>
-                      <SelectTrigger className="w-full"><SelectValue placeholder={t('settings.category_placeholder')} /></SelectTrigger>
-                      <SelectContent className="max-h-72">
-                        <SelectItem value="__none">{t('settings.no_category_selected')}</SelectItem>
-                        {storeCategories.map((category) => (
-                          <SelectItem key={`${category.version}:${category.id}`} value={category.id}>{category.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="outline" role="combobox" className="w-full justify-between font-normal">
+                          <span className={draft.storeCategories.length ? 'truncate' : 'truncate text-muted-foreground'}>
+                            {draft.storeCategories.length
+                              ? draft.storeCategories.map((category) => categoryName(category)).join(', ')
+                              : t('settings.category_placeholder')}
+                          </span>
+                          <ChevronsUpDown className="size-4 shrink-0 opacity-50" aria-hidden="true" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+                        <Command>
+                          <CommandInput placeholder={t('settings.category_placeholder')} />
+                          <CommandList className="max-h-72">
+                            <CommandEmpty>{t('settings.category_no_results')}</CommandEmpty>
+                            <CommandGroup>
+                              {storeCategories.map((category) => {
+                                const checked = draft.storeCategories.some((entry) => entry.id === category.id);
+                                return (
+                                  <CommandItem
+                                    key={`${category.version}:${category.id}`}
+                                    value={`${category.name} ${category.id}`}
+                                    data-checked={checked}
+                                    aria-selected={checked}
+                                    onSelect={() => toggleStoreCategory(category.id)}
+                                  >
+                                    {category.name}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                  {!draft.storeCategoryId ? <p className="text-xs text-muted-foreground">{t('settings.category_hint')}</p> : null}
+                  {draft.storeCategories.length ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {draft.storeCategories.map((category) => (
+                        <Badge key={category.id} variant="secondary" className="gap-1 pr-1">
+                          {categoryName(category)}
+                          <button
+                            type="button"
+                            className="rounded-sm opacity-60 hover:opacity-100"
+                            aria-label={`Remove ${categoryName(category)}`}
+                            onClick={() => toggleStoreCategory(category.id)}
+                          >
+                            <X className="size-3" aria-hidden="true" />
+                          </button>
+                        </Badge>
+                      ))}
+                      <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearStoreCategories}>
+                        {t('settings.category_clear')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{t('settings.category_hint')}</p>
+                  )}
                 </>
               )}
             </CardContent>
@@ -179,6 +240,8 @@ export function SettingsSection() {
               </Row>
             </CardContent>
           </Card>
+
+          <BlockedDatesCard />
 
           <Card>
             <CardHeader>
@@ -215,6 +278,111 @@ export function SettingsSection() {
 
           <Card>
             <CardHeader>
+              <CardTitle>{t('settings.deposits_title')}</CardTitle>
+              <CardDescription>{t('settings.deposits_desc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t('settings.deposit_mode')}</Label>
+                <Select
+                  value={plan.orderDeposit ? draft.depositMode : 'item'}
+                  disabled={!plan.orderDeposit}
+                  onValueChange={(value) => set('depositMode', value === 'order' ? 'order' : 'item')}
+                >
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="item">{t('settings.deposit_mode_item')}</SelectItem>
+                    <SelectItem value="order">{t('settings.deposit_mode_order')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {!plan.orderDeposit
+                    ? t('settings.deposit_mode_locked_desc')
+                    : draft.depositMode === 'order'
+                      ? t('settings.deposit_mode_order_desc')
+                      : t('settings.deposit_mode_item_desc')}
+                </p>
+              </div>
+              {plan.orderDeposit && draft.depositMode === 'order' ? (
+                <TextField
+                  id="order-deposit"
+                  label={t('settings.order_deposit_amount', { currency: draft.currency })}
+                  step="0.01"
+                  hint={draft.orderDepositAmount > 0 ? t('settings.order_deposit_amount_hint') : t('settings.order_deposit_amount_empty')}
+                  {...numberField(draft.orderDepositAmount, (value) => set('orderDepositAmount', value))}
+                />
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('settings.late_title')}</CardTitle>
+              <CardDescription>{t('settings.late_desc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  id="late-grace"
+                  label={t('settings.late_grace')}
+                  hint={t('settings.late_grace_hint')}
+                  {...numberField(draft.lateGraceMinutes, (value) => set('lateGraceMinutes', Math.round(value)))}
+                />
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t('settings.late_fee_mode')}</Label>
+                  <Select value={draft.lateFeeMode} onValueChange={(value) => set('lateFeeMode', value as Settings['lateFeeMode'])}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">{t('settings.late_fee_off')}</SelectItem>
+                      <SelectItem value="day">{t('settings.late_fee_day')}</SelectItem>
+                      <SelectItem value="hour">{t('settings.late_fee_hour')}</SelectItem>
+                      <SelectItem value="rate">{t('settings.late_fee_rate')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {draft.lateFeeMode !== 'off' ? (
+                  <>
+                    <TextField
+                      id="late-fee-amount"
+                      step="0.01"
+                      label={draft.lateFeeMode === 'rate'
+                        ? t('settings.late_fee_percent')
+                        : t('settings.late_fee_amount', { currency: draft.currency })}
+                      hint={draft.lateFeeMode === 'rate' ? t('settings.late_fee_percent_hint') : t('settings.late_fee_amount_hint')}
+                      {...numberField(draft.lateFeeAmount, (value) => set('lateFeeAmount', value))}
+                    />
+                    <TextField
+                      id="late-fee-max"
+                      step="0.01"
+                      label={t('settings.late_fee_max', { currency: draft.currency })}
+                      hint={t('settings.late_fee_max_hint')}
+                      {...numberField(draft.lateFeeMax, (value) => set('lateFeeMax', value))}
+                    />
+                  </>
+                ) : null}
+                <TextField
+                  id="lost-after"
+                  label={t('settings.lost_after')}
+                  hint={t('settings.lost_after_hint')}
+                  {...numberField(draft.lostAfterDays, (value) => set('lostAfterDays', Math.round(value)))}
+                />
+              </div>
+              <Row
+                label={t('settings.review_late_renters')}
+                description={plan.manualApproval ? t('settings.review_late_renters_desc') : t('settings.manual_approval_disabled_desc')}
+              >
+                <Switch
+                  checked={plan.manualApproval && draft.reviewLateRenters}
+                  disabled={!plan.manualApproval}
+                  onCheckedChange={(checked) => set('reviewLateRenters', checked)}
+                  aria-label={t('settings.review_late_renters')}
+                />
+              </Row>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>{t('settings.notifications_title')}</CardTitle>
               <CardDescription>{t('settings.notifications_desc')}</CardDescription>
             </CardHeader>
@@ -222,6 +390,16 @@ export function SettingsSection() {
               <Row label={t('settings.email_owner_new')} description={t('settings.email_owner_new_desc')}>
                 <Switch checked={draft.emailOwnerNewBookings} onCheckedChange={(checked) => set('emailOwnerNewBookings', checked)} aria-label={t('settings.email_owner_new')} />
               </Row>
+              <TextField
+                id="owner-alert-email"
+                type="email"
+                label={t('settings.owner_alert_email')}
+                placeholder={t('settings.owner_alert_email_placeholder')}
+                hint={t('settings.owner_alert_email_hint')}
+                error={draft.ownerNotificationEmail?.trim() && !isEmailAddress(draft.ownerNotificationEmail) ? t('settings.owner_alert_email_invalid') : undefined}
+                value={draft.ownerNotificationEmail ?? ''}
+                onChange={(event) => set('ownerNotificationEmail', event.target.value)}
+              />
               <Row label={t('settings.email_owner_requests')}>
                 <Switch checked={draft.emailOwnerRenterRequests} onCheckedChange={(checked) => set('emailOwnerRenterRequests', checked)} aria-label={t('settings.email_owner_requests')} />
               </Row>
@@ -236,6 +414,12 @@ export function SettingsSection() {
               </Row>
               <Row label={t('settings.email_renters_deposits')}>
                 <Switch checked={draft.emailRentersDepositUpdates} onCheckedChange={(checked) => set('emailRentersDepositUpdates', checked)} aria-label={t('settings.email_renters_deposits')} />
+              </Row>
+              <Row label={t('settings.email_renters_returns')} description={t('settings.email_renters_returns_desc')}>
+                <Switch checked={draft.emailRentersReturnReminders} onCheckedChange={(checked) => set('emailRentersReturnReminders', checked)} aria-label={t('settings.email_renters_returns')} />
+              </Row>
+              <Row label={t('settings.email_owner_overdue')} description={t('settings.email_owner_overdue_desc')}>
+                <Switch checked={draft.emailOwnerOverdueAlerts} onCheckedChange={(checked) => set('emailOwnerOverdueAlerts', checked)} aria-label={t('settings.email_owner_overdue')} />
               </Row>
             </CardContent>
           </Card>

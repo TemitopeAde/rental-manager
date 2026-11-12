@@ -1,3 +1,6 @@
+import type { DepositMode } from './deposit-rules';
+import type { RefundRecord } from './refund-rules';
+import type { LateFeeMode } from './late-rules';
 export type ItemStatus = 'active' | 'hidden' | 'archived';
 export type BookingStatus =
   | 'hold'
@@ -7,7 +10,12 @@ export type BookingStatus =
   | 'returned'
   | 'cancelled'
   | 'overdue'
-  | 'expired';
+  | 'expired'
+  // Written off: the renter never brought it back.
+  | 'lost';
+export const BOOKING_STATUSES: readonly BookingStatus[] = ['hold', 'pending', 'confirmed', 'active', 'returned', 'cancelled', 'overdue', 'expired', 'lost'];
+/** Bookings the merchant still has to act on; the dashboard's "Open" tab. */
+export const OPEN_BOOKING_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed', 'active', 'overdue'];
 export type ApprovalMode = 'auto' | 'manual';
 export type StoreCatalogVersion = 'V1_CATALOG' | 'V3_CATALOG';
 export type StoreRentalOverride = 'inherit' | 'enabled' | 'disabled';
@@ -54,13 +62,40 @@ export interface Renter {
 }
 
 // A renter's request to move or cancel a paid booking; nothing changes until the site owner approves.
+// An 'extend' request keeps the pickup date and moves only the return date of a rental that is out.
 export interface DateChangeRequest {
-  type: 'dates' | 'cancel';
+  type: 'dates' | 'cancel' | 'extend';
   startDate: string;
   endDate: string;
   quote: Quote;
   requestedAt: string;
   status: 'pending' | 'declined';
+}
+
+// Tracks a rental that came back (or is still out) after its return time.
+export interface LateReturn {
+  /** When the rental first went overdue (ISO time). */
+  overdueSince: string;
+  /** Started late days and hours, counted from the return time. */
+  lateDays: number;
+  lateHours: number;
+  /** Late fee owed so far, or the final fee once `final` is set. */
+  fee: number;
+  /** True once the rental is back or written off; the fee no longer grows. */
+  final: boolean;
+  returnedAt?: string;
+  /** Set when the rental passed the "probably lost" threshold in Settings. */
+  lostFlaggedAt?: string;
+}
+
+// A Wix payment link sent to the renter for money owed after checkout.
+export interface PaymentRequest {
+  kind: 'late-fee' | 'extension';
+  amount: number;
+  linkId: string;
+  url: string;
+  status: 'unpaid' | 'paid' | 'inactive';
+  at: string;
 }
 
 export interface Booking {
@@ -80,8 +115,16 @@ export interface Booking {
   memberId: string;
   changeRequest?: DateChangeRequest;
   depositOutcome?: { outcome: 'released' | 'kept'; amountKept: number; note: string };
+  // True when quote.deposit is the whole order's per-order deposit, not this item's own.
+  orderDeposit: boolean;
+  // Refunds issued from this app against this booking's Wix order.
+  refunds: RefundRecord[];
   idempotencyKey: string;
   refundNeeded: boolean;
+  lateReturn?: LateReturn;
+  /** Keys of return reminders and alerts already sent for this booking, so each goes out once. */
+  notices: string[];
+  paymentRequests: PaymentRequest[];
 }
 
 export interface Settings {
@@ -90,6 +133,8 @@ export interface Settings {
   pickupHour: string;
   returnHour: string;
   approvalMode: ApprovalMode;
+  depositMode: DepositMode;
+  orderDepositAmount: number;
   defaultBufferDays: number;
   defaultMinDays: number;
   defaultMaxDays: number;
@@ -97,18 +142,61 @@ export interface Settings {
   countReturnDay: boolean;
   emailSenderName: string;
   emailOwnerNewBookings: boolean;
+  // Where owner alerts go; empty means the site owner's Wix login email.
+  ownerNotificationEmail: string;
   emailOwnerRenterRequests: boolean;
   emailOwnerRefundAlerts: boolean;
   emailRentersRequestUpdates: boolean;
   emailRentersBookingUpdates: boolean;
   emailRentersDepositUpdates: boolean;
+  // Return reminder on the due date and overdue notices to renters.
+  emailRentersReturnReminders: boolean;
+  // Owner alerts when a rental goes overdue, puts the next rental at risk, or may be lost.
+  emailOwnerOverdueAlerts: boolean;
+  // Late returns: see late-rules.ts.
+  lateGraceMinutes: number;
+  lateFeeMode: LateFeeMode;
+  lateFeeAmount: number;
+  lateFeeMax: number;
+  lostAfterDays: number;
+  // Paid bookings from renters with a late or lost rental wait for approval (needs manual approval on the plan).
+  reviewLateRenters: boolean;
+  // When the overdue sweep last ran (ISO time); it runs at most every few minutes.
+  lastReturnSweepAt: string;
+  // Setup checklist: steps the owner marked done, and whether it is hidden from Today.
+  setupDone: string[];
+  setupHidden: boolean;
   language: string;
   // Confirmed from the dashboard; online bookings stay closed until the Members Area is installed.
   membersAreaInstalled: boolean;
   currency: string;
-  storeCategoryId: string;
-  storeCategoryName: string;
+  // Wix Stores categories whose products are rentable by default. Empty means none.
+  storeCategories: StoreCategoryRef[];
   storeCategoryVersion?: StoreCatalogVersion;
+}
+
+export interface StoreCategoryRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * Reads the selected rental categories. Older settings rows stored a single category in
+ * storeCategoryId/storeCategoryName, so those still count when the list was never saved.
+ */
+export function asStoreCategoryRefs(list: unknown, legacyId?: unknown, legacyName?: unknown): StoreCategoryRef[] {
+  if (Array.isArray(list)) {
+    const seen = new Set<string>();
+    return list.flatMap((entry) => {
+      const row = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+      const id = typeof row.id === 'string' ? row.id.trim() : '';
+      if (!id || seen.has(id)) return [];
+      seen.add(id);
+      return [{ id, name: typeof row.name === 'string' ? row.name : '' }];
+    });
+  }
+  const id = typeof legacyId === 'string' ? legacyId.trim() : '';
+  return id ? [{ id, name: typeof legacyName === 'string' ? legacyName : '' }] : [];
 }
 
 export interface BlockedDate {

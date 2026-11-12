@@ -65,6 +65,7 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
   const [item, setItem] = useState<CatalogItem | null>(null);
   const [language, setLanguage] = useState<string | undefined>();
   const [message, setMessage] = useState('');
+  const [ineligible, setIneligible] = useState(false);
 
   const { t, isRtl } = useSiteI18n(language);
 
@@ -72,12 +73,13 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
     let active = true;
     setItem(null);
     setMessage('');
+    setIneligible(false);
     request<{ eligible: boolean; item?: CatalogItem; message?: string; language?: string }>(`/api/rentals/store-product?productId=${encodeURIComponent(productId)}`)
       .then((body) => {
         if (!active) return;
         if (body.language) setLanguage(body.language);
         if (body.eligible && body.item) setItem(body.item);
-        else setMessage(body.message || t('not_configured'));
+        else setIneligible(true);
       })
       .catch(() => {
         if (active) setMessage(t('not_available_for_product'));
@@ -91,6 +93,7 @@ export function StoreRentalEmbed({ productId, appearance }: { productId: string;
 
   const toaster = <Toaster position="top-center" closeButton richColors />;
 
+  if (ineligible) return null;
   if (message) {
     return <div className={styles.pluginContainer} dir={isRtl ? 'rtl' : 'ltr'}>{toaster}</div>;
   }

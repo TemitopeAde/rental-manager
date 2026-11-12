@@ -4,13 +4,16 @@ import { listBookings } from './actions';
 import { asBooking, newReference } from './holds';
 import { claimUnitsForBooking } from './claim';
 import { checkRange } from './availability';
-import { minutesNow, parseHour, todayInTimezone } from './dates';
+import { todayInTimezone } from './dates';
+import { findAtRisk, liveBookings, sweepReturns } from './returns';
 import type { RentalItem, Settings } from './models';
-import { text } from './models';
+import { asStoreCategoryRefs, text } from './models';
 import { canBookItem, liveItemCount, readPlan } from './plans';
+import { getCurrentAppInstance } from './app-instance';
 import { defaultSettings } from './availability';
-import { insertRow, queryRows, removeRow, updateRow, getRow, type Row } from './store';
-import { getCatalogState, getStoreProduct, getStoreProductImageGalleries, listStoreCategories, productMatchesCategory } from './stores';
+import { insertRow, queryRows, removeRow, removeRows, updateRow, getRow, type Row } from './store';
+import { newBlockDates, type BlockRow } from './blocked-rules';
+import { getCatalogState, getStoreProduct, getStoreProductImageGalleries, listStoreCategories, matchingCategory } from './stores';
 import { emailBookingUpdate } from './emails';
 
 const merchant = { elevate: true };
@@ -205,6 +208,8 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.pickupHour) next.pickupHour = patch.pickupHour;
   if (patch.returnHour) next.returnHour = patch.returnHour;
   if (patch.approvalMode) next.approvalMode = plan.manualApproval ? patch.approvalMode : 'auto';
+  if (patch.depositMode) next.depositMode = plan.orderDeposit ? patch.depositMode : 'item';
+  if (patch.orderDepositAmount !== undefined) next.orderDepositAmount = Math.max(0, Math.round(patch.orderDepositAmount * 100) / 100);
   if (patch.defaultBufferDays !== undefined) next.defaultBufferDays = patch.defaultBufferDays;
   if (patch.defaultMinDays !== undefined) next.defaultMinDays = patch.defaultMinDays;
   if (patch.defaultMaxDays !== undefined) next.defaultMaxDays = patch.defaultMaxDays;
@@ -212,15 +217,29 @@ export async function saveSettings(patch: Partial<Settings>) {
   if (patch.countReturnDay !== undefined) next.countReturnDay = patch.countReturnDay;
   if (patch.emailSenderName) next.emailSenderName = patch.emailSenderName;
   if (patch.emailOwnerNewBookings !== undefined) next.emailOwnerNewBookings = patch.emailOwnerNewBookings;
+  if (patch.ownerNotificationEmail !== undefined) next.ownerNotificationEmail = patch.ownerNotificationEmail.trim();
   if (patch.emailOwnerRenterRequests !== undefined) next.emailOwnerRenterRequests = patch.emailOwnerRenterRequests;
   if (patch.emailOwnerRefundAlerts !== undefined) next.emailOwnerRefundAlerts = patch.emailOwnerRefundAlerts;
   if (patch.emailRentersRequestUpdates !== undefined) next.emailRentersRequestUpdates = patch.emailRentersRequestUpdates;
   if (patch.emailRentersBookingUpdates !== undefined) next.emailRentersBookingUpdates = patch.emailRentersBookingUpdates;
   if (patch.emailRentersDepositUpdates !== undefined) next.emailRentersDepositUpdates = patch.emailRentersDepositUpdates;
+  if (patch.emailRentersReturnReminders !== undefined) next.emailRentersReturnReminders = patch.emailRentersReturnReminders;
+  if (patch.emailOwnerOverdueAlerts !== undefined) next.emailOwnerOverdueAlerts = patch.emailOwnerOverdueAlerts;
+  if (patch.lateGraceMinutes !== undefined) next.lateGraceMinutes = Math.min(24 * 60, Math.max(0, Math.round(patch.lateGraceMinutes)));
+  if (patch.lateFeeMode) next.lateFeeMode = patch.lateFeeMode;
+  if (patch.lateFeeAmount !== undefined) next.lateFeeAmount = Math.max(0, Math.round(patch.lateFeeAmount * 100) / 100);
+  if (patch.lateFeeMax !== undefined) next.lateFeeMax = Math.max(0, Math.round(patch.lateFeeMax * 100) / 100);
+  if (patch.lostAfterDays !== undefined) next.lostAfterDays = Math.max(0, Math.round(patch.lostAfterDays));
+  if (patch.reviewLateRenters !== undefined) next.reviewLateRenters = plan.manualApproval ? patch.reviewLateRenters : false;
   if (patch.language) next.language = patch.language;
   if (patch.membersAreaInstalled !== undefined) next.membersAreaInstalled = patch.membersAreaInstalled;
-  if (patch.storeCategoryId !== undefined) next.storeCategoryId = patch.storeCategoryId;
-  if (patch.storeCategoryName !== undefined) next.storeCategoryName = patch.storeCategoryName;
+  if (patch.storeCategories !== undefined) {
+    const selected = asStoreCategoryRefs(patch.storeCategories);
+    next.storeCategories = selected;
+    // Legacy single-category fields stay filled so the CMS row reads clearly.
+    next.storeCategoryId = selected[0]?.id ?? '';
+    next.storeCategoryName = selected.map((category) => category.name).join(', ');
+  }
   if ('storeCategoryVersion' in patch) next.storeCategoryVersion = patch.storeCategoryVersion;
   const saved = current
     ? await updateRow(collections.settings, next, merchant)
@@ -232,42 +251,58 @@ export async function storeCategories() {
   return listStoreCategories();
 }
 
+/** The store-synced fields; the item is only written when one of these differs. */
+const STORE_SYNCED_FIELDS = ['name', 'description', 'dailyRate', 'category', 'storeProductId', 'storeRentalOverride', 'images', 'status'] as const;
+
+function storeFieldsChanged(existing: Row, next: Row): boolean {
+  return STORE_SYNCED_FIELDS.some((field) => JSON.stringify(existing[field] ?? null) !== JSON.stringify(next[field] ?? null));
+}
+
 /**
  * Resolves a Store product into a Rental Item only when the category/override
- * rules make it rentable. Store product fields are refreshed on each request;
- * rental-specific fields remain merchant-owned values in Rental Items.
+ * rules make it rentable. Store product fields are refreshed from the product,
+ * but the item is only written when they changed; rental-specific fields remain
+ * merchant-owned values in Rental Items. Returns the settings it loaded so the
+ * caller doesn't read them again.
  */
-export async function resolveStoreRentalItem(productId: string) {
+export async function resolveStoreRentalItem(productId: string): Promise<{ item: RentalItem | null; settings: Settings }> {
+  // The catalog version and the app instance are each fetched once and shared.
+  const versionPromise = getCatalogState();
+  const appInstancePromise = getCurrentAppInstance().catch(() => undefined);
   const [settings, version, product, plan] = await Promise.all([
-    loadSettings(merchant),
-    getCatalogState(),
-    getStoreProduct(productId),
-    readPlan(merchant),
+    appInstancePromise.then((appInstance) => loadSettings(merchant, appInstance)),
+    versionPromise,
+    versionPromise.then((catalogVersion) => getStoreProduct(productId, catalogVersion)),
+    appInstancePromise.then((appInstance) => readPlan(merchant, appInstance)),
   ]);
-  if (!product || !product.physical || !product.visible || product.dailyRate <= 0) {
-    return null;
-  }
+  const none = { item: null, settings };
+  if (!product || !product.physical || !product.visible || product.dailyRate <= 0) return none;
 
   const found = await queryRows(collections.items, merchant).eq('storeProductId', productId).limit(1).find();
   const existing = found.items[0] as Row | undefined;
   if (existing) {
-    if (!(await canBookItem(existing._id, merchant, plan))) return null;
+    if (!(await canBookItem(existing._id, merchant, plan))) return none;
   } else if (plan.maxItems !== null) {
     const allItems = await queryRows(collections.items, merchant).limit(1000).find();
-    if (liveItemCount(allItems.items) >= plan.maxItems) return null;
+    if (liveItemCount(allItems.items) >= plan.maxItems) return none;
   }
   const override = text(existing?.storeRentalOverride, 'inherit');
   const explicit = override === 'enabled' || override === 'disabled' ? override : 'inherit';
-  const inCategory = settings.storeCategoryVersion === version && productMatchesCategory(product, settings.storeCategoryId);
-  const enabled = explicit === 'enabled' || (explicit === 'inherit' && inCategory);
-  if (!enabled) return null;
+  const matched = settings.storeCategoryVersion === version ? matchingCategory(product, settings.storeCategories) : undefined;
+  const inCategory = Boolean(matched);
+  // Items auto-created from the store category use the `store-<productId>` slug and
+  // should keep following the category. Any other item was linked to this product
+  // by the merchant, which is an explicit opt-in even when the override is "inherit".
+  const manuallyLinked = Boolean(existing) && text(existing?.slug) !== `store-${productId}`;
+  const enabled = explicit === 'enabled' || (explicit === 'inherit' && (inCategory || manuallyLinked));
+  if (!enabled) return none;
 
   const base = existing ?? {
     _id: '',
     name: product.name,
     description: product.description,
     slug: `store-${product.id}`,
-    category: settings.storeCategoryName,
+    category: matched?.name ?? '',
     unitCount: 1,
     dailyRate: product.dailyRate,
     weeklyRate: 0,
@@ -285,14 +320,15 @@ export async function resolveStoreRentalItem(productId: string) {
     name: product.name || base.name,
     description: product.description || base.description,
     dailyRate: product.dailyRate,
-    category: existing ? text(existing.category) : settings.storeCategoryName,
+    category: existing ? text(existing.category) : matched?.name ?? '',
     storeProductId: product.id,
     storeRentalOverride: explicit,
     images: storeGallery(product.images, product.name || text(base.name)),
     status: text(base.status, 'active'),
   };
+  if (existing && !storeFieldsChanged(existing, next)) return { item: asItem(existing), settings };
   const saved = existing ? await updateRow(collections.items, next, merchant) : await insertRow(collections.items, next, merchant);
-  return asItem(saved);
+  return { item: asItem(saved), settings };
 }
 
 function loadSettingsFrom(row: Row) {
@@ -301,12 +337,38 @@ function loadSettingsFrom(row: Row) {
 
 export async function blockDates(itemId: string | undefined, dates: string[], reason: string) {
   const owner = itemId || ALL_ITEMS;
-  const created = [];
-  for (const date of dates) {
-    const row = await insertRow(collections.blockedDates, { itemId: owner, date, reason }, merchant);
-    created.push(row._id);
+  const requested = newBlockDates(dates, []);
+  if (requested.length === 0) return { ok: true as const, count: 0 };
+  const existing = await queryRows(collections.blockedDates, merchant)
+    .eq('itemId', owner)
+    .hasSome('date', requested)
+    .limit(1000)
+    .find();
+  const fresh = newBlockDates(requested, existing.items.map((row) => text(row.date)));
+  for (const date of fresh) {
+    await insertRow(collections.blockedDates, { itemId: owner, date, reason: reason.trim() }, merchant);
   }
-  return { ok: true as const, count: created.length };
+  return { ok: true as const, count: fresh.length };
+}
+
+// Closed dates from today on, oldest first. Past dates no longer affect bookings, so they are left out.
+export async function listBlockedDates(): Promise<BlockRow[]> {
+  const settings = await loadSettings(merchant);
+  const today = todayInTimezone(settings.timezone);
+  const result = await queryRows(collections.blockedDates, merchant)
+    .ge('date', today)
+    .ascending('date')
+    .limit(1000)
+    .find();
+  return result.items
+    .filter((row): row is Row => typeof row._id === 'string')
+    .map((row) => ({ _id: row._id, itemId: text(row.itemId, ALL_ITEMS), date: text(row.date), reason: text(row.reason) }));
+}
+
+export async function removeBlocks(ids: string[]) {
+  const unique = [...new Set(ids.filter((id) => typeof id === 'string' && id))];
+  await removeRows(collections.blockedDates, unique, merchant);
+  return { ok: true as const, count: unique.length };
 }
 
 export async function unblockDates(itemId: string | undefined, dates: string[]) {
@@ -321,26 +383,19 @@ export async function unblockDates(itemId: string | undefined, dates: string[]) 
 }
 
 export async function todayBoard() {
+  // The board is where the owner looks for late rentals, so it brings them up to date first.
+  await sweepReturns({ minIntervalMs: 60_000 }).catch((error) =>
+    console.error('[Rental Manager] overdue sweep failed', error instanceof Error ? error.message : error));
   const settings = await loadSettings(merchant);
   const today = todayInTimezone(settings.timezone);
-  const bookings = await listBookings();
-  const returnMinutes = parseHour(settings.returnHour);
-  const now = minutesNow(settings.timezone);
-  const overdue = bookings.filter(
-    (booking) =>
-      (booking.status === 'active' || booking.status === 'overdue') &&
-      (booking.endDate < today || (booking.endDate === today && now > returnMinutes)),
-  );
-  for (const booking of overdue) {
-    if (booking.status === 'overdue') continue;
-    const row = await getRow(collections.bookings, booking._id, merchant);
-    if (row) await updateRow(collections.bookings, { ...row, status: 'overdue' }, merchant);
-  }
+  const live = await liveBookings();
+  const risks = await findAtRisk(live);
   return {
     date: today,
-    pickups: bookings.filter((booking) => booking.startDate === today && booking.status === 'confirmed'),
-    returns: bookings.filter((booking) => booking.endDate === today && (booking.status === 'active' || booking.status === 'overdue')),
-    overdue,
+    pickups: live.filter((booking) => booking.startDate === today && booking.status === 'confirmed'),
+    returns: live.filter((booking) => booking.endDate === today && (booking.status === 'active' || booking.status === 'overdue')),
+    overdue: live.filter((booking) => booking.status === 'overdue').sort((a, b) => a.endDate.localeCompare(b.endDate)),
+    atRisk: risks.map((risk) => ({ booking: risk.booking, blockedBy: risk.blockers.map((late) => late.reference) })),
     settings,
   };
 }
@@ -360,7 +415,7 @@ export async function createManualBooking(input: {
   if (!(await canBookItem(input.itemId, merchant, plan))) {
     return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
   }
-  const availability = await checkRange(item, settings, input.startDate, input.endDate, input.quantity, plan.perItemRules, merchant);
+  const availability = await checkRange(item, settings, input.startDate, input.endDate, input.quantity, plan, merchant);
   if (!availability.ok || !availability.quote) return { ok: false as const, message: availability.message };
   const reference = newReference();
   const created = await insertRow(

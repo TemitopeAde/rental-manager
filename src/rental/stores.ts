@@ -94,16 +94,28 @@ export async function getCatalogState(): Promise<CatalogState> {
   return (await detectCatalog()).version;
 }
 
+/** Reads every page of a Wix query, so a store with many categories isn't cut off at one page. */
+async function allPages<T>(first: { items: T[]; hasNext: () => boolean; next: () => Promise<unknown> }): Promise<T[]> {
+  const rows = [...first.items];
+  let page = first;
+  while (page.hasNext()) {
+    page = (await page.next()) as typeof first;
+    rows.push(...page.items);
+  }
+  return rows;
+}
+
 export async function listStoreCategories(): Promise<{ version: CatalogState; categories: StoreCategory[] }> {
   const version = await getCatalogState();
   if (version === 'STORES_NOT_INSTALLED') return { version, categories: [] };
 
   try {
+    // V1 calls them collections. Their IDs are what V1 products list in `collectionIds`.
     if (version === 'V1_CATALOG') {
-      const result = await auth.elevate(collections.queryCollections)().limit(1000).find();
+      const rows = await allPages(await auth.elevate(collections.queryCollections)().limit(100).find());
       return {
         version,
-        categories: result.items.flatMap((item) => {
+        categories: rows.flatMap((item) => {
           const row = record(item);
           const id = stringValue(row._id);
           const name = stringValue(row.name);
@@ -112,23 +124,30 @@ export async function listStoreCategories(): Promise<{ version: CatalogState; ca
       };
     }
 
-    const queryCategories = categories.queryCategories as unknown as (options: unknown) => Promise<unknown>;
-    const result = record(await auth.elevate(queryCategories)({
-      treeReference: { appNamespace: '@wix/stores', treeKey: null },
-      query: { paging: { limit: 1000 } },
-      returnNonVisibleCategories: true,
-    }));
-    const rows = Array.isArray(result.categories) ? result.categories : [];
+    // V3 uses the Categories API. Call it with an explicit query object: the query-builder form
+    // (queryCategories(options).find()) sends a filter Wix rejects with INVALID_FILTER "empty condition".
+    // Pages hold up to 1,000; any further pages are read with the returned cursor.
+    const query = auth.elevate(categories.queryCategories);
+    const options = { treeReference: { appNamespace: '@wix/stores', treeKey: null }, returnNonVisibleCategories: true };
+    const rows: unknown[] = [];
+    let cursor: string | null | undefined;
+    do {
+      const page = await query(cursor ? { cursorPaging: { limit: 1000, cursor } } : { cursorPaging: { limit: 1000 } }, options);
+      rows.push(...(page.categories ?? []));
+      cursor = page.pagingMetadata?.hasNext ? page.pagingMetadata.cursors?.next : null;
+    } while (cursor);
     return {
       version,
       categories: rows.flatMap((item) => {
         const row = record(item);
-        const id = stringValue(row.id) || stringValue(row._id);
+        const id = stringValue(row._id) || stringValue(row.id);
         const name = stringValue(row.name);
         return id && name ? [{ id, name, version }] : [];
       }),
     };
   } catch (error) {
+    // An empty list in Settings looks like "no categories"; log the real reason (usually a missing permission).
+    console.error(`Could not list Wix Stores ${version === 'V1_CATALOG' ? 'collections' : 'categories'}.`, error);
     return { version, categories: [] };
   }
 }
@@ -140,7 +159,9 @@ export async function getStoreProduct(productId: string, catalogVersion?: Catalo
   try {
     const product = version === 'V1_CATALOG'
       ? (await auth.elevate(products.getProduct)(productId)).product
-      : await auth.elevate(productsV3.getProduct)(productId, { fields: ['MEDIA_ITEMS_INFO'] });
+      // V3 returns a product's categories only when asked. ALL_CATEGORIES_INFO includes parent categories,
+      // so a product in a subcategory still counts when the merchant picks the parent as the rental category.
+      : await auth.elevate(productsV3.getProduct)(productId, { fields: ['MEDIA_ITEMS_INFO', 'ALL_CATEGORIES_INFO'] });
     const row = record(product);
     const price = record(row.price);
     const actualPrice = record(row.actualPrice);
@@ -157,7 +178,7 @@ export async function getStoreProduct(productId: string, catalogVersion?: Catalo
     const productType = stringValue(row.productType).toLowerCase();
     const categoryIds = version === 'V1_CATALOG'
       ? (Array.isArray(row.collectionIds) ? row.collectionIds.filter((id): id is string => typeof id === 'string') : [])
-      : ids(record(row.directCategoriesInfo).categories);
+      : ids(record(row.allCategoriesInfo).categories);
     return {
       id: stringValue(row._id) || stringValue(row.id) || productId,
       name: stringValue(row.name),
@@ -229,6 +250,11 @@ export function productMatchesCategory(product: StoreProduct, categoryId: string
   return Boolean(categoryId) && product.categoryIds.includes(categoryId);
 }
 
+/** The first selected rental category the product belongs to, if any. */
+export function matchingCategory<T extends { id: string }>(product: StoreProduct, selected: T[]): T | undefined {
+  return selected.find((category) => productMatchesCategory(product, category.id));
+}
+
 export interface StoreProductOption {
   id: string;
   name: string;
@@ -290,7 +316,9 @@ export async function getStoreProductOption(productId: string): Promise<StorePro
   try {
     const product = version === 'V1_CATALOG'
       ? (await auth.elevate(products.getProduct)(productId)).product
-      : await auth.elevate(productsV3.getProduct)(productId, { fields: ['MEDIA_ITEMS_INFO'] });
+      // V3 returns a product's categories only when asked. ALL_CATEGORIES_INFO includes parent categories,
+      // so a product in a subcategory still counts when the merchant picks the parent as the rental category.
+      : await auth.elevate(productsV3.getProduct)(productId, { fields: ['MEDIA_ITEMS_INFO', 'ALL_CATEGORIES_INFO'] });
     return productOption(product, version);
   } catch {
     return null;

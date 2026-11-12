@@ -19,6 +19,8 @@ interface Totals {
   averageDays: number;
   depositsKept: number;
   cancelled: number;
+  lateReturns: number;
+  lateFees: number;
 }
 
 interface Analytics {
@@ -35,7 +37,7 @@ interface Analytics {
   partial: boolean;
 }
 
-const statusOrder: BookingRow['status'][] = ['pending', 'confirmed', 'active', 'overdue', 'returned', 'cancelled'];
+const statusOrder: BookingRow['status'][] = ['pending', 'confirmed', 'active', 'overdue', 'returned', 'lost', 'cancelled'];
 
 function compactMoney(amount: number, currency: string, locale?: string): string {
   try {
@@ -376,6 +378,14 @@ export function AnalyticsSection() {
               <div>
                 <dt className="text-muted-foreground">{t('analytics.glance_cancellations')}</dt>
                 <dd className="font-semibold">{current.cancelled.toLocaleString(locale)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">{t('analytics.glance_late_returns')}</dt>
+                <dd className="font-semibold">{(current.lateReturns ?? 0).toLocaleString(locale)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">{t('analytics.glance_late_fees')}</dt>
+                <dd className="font-semibold">{money(current.lateFees ?? 0)}</dd>
               </div>
             </dl>
             {statuses.length ? (

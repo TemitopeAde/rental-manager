@@ -34,6 +34,7 @@ function toAnalytics(row: Row): AnalyticsBooking {
     idempotencyKey: booking.idempotencyKey,
     quote: { days: booking.quote.days, rental: booking.quote.rental },
     depositOutcome: booking.depositOutcome,
+    lateReturn: booking.lateReturn ? { lateDays: booking.lateReturn.lateDays, fee: booking.lateReturn.fee } : undefined,
   };
 }
 

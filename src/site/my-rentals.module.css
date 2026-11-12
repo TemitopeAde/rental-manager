@@ -117,6 +117,11 @@
   color: color-mix(in srgb, #d6453d 85%, var(--rm-text, #1a1a1a));
 }
 
+.status[data-status='lost'] {
+  background: color-mix(in srgb, #d6453d 22%, transparent);
+  color: color-mix(in srgb, #d6453d 90%, var(--rm-text, #1a1a1a));
+}
+
 .status[data-status='returned'],
 .status[data-status='cancelled'] {
   background: color-mix(in srgb, var(--rm-text, #1a1a1a) 8%, transparent);
@@ -348,4 +353,28 @@
   .actions > * {
     flex: 1 1 100%;
   }
+}
+
+.dateField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.dateInput {
+  max-width: 14rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--rm-text, #1a1a1a) 20%, transparent);
+  border-radius: var(--rm-radius-value);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+
+.dateInput:focus-visible {
+  outline: 2px solid var(--rm-accent, #116dff);
+  outline-offset: 2px;
 }

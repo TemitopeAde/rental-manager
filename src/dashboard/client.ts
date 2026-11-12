@@ -1,4 +1,5 @@
 import { httpClient } from '@wix/essentials';
+import { readableError } from '@/lib/error-text';
 
 export function endpoint(path: string): string {
   return new URL(path, import.meta.url).href;
@@ -6,8 +7,9 @@ export function endpoint(path: string): string {
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await httpClient.fetchWithAuth(endpoint(path), init);
-  const body = (await response.json()) as T & { message?: string };
-  if (!response.ok) throw new Error(body.message || `Request failed (${response.status})`);
+  // A crashed route can answer with an HTML error page, which isn't JSON.
+  const body = (await response.json().catch(() => ({}))) as T & { message?: string };
+  if (!response.ok) throw new Error(readableError(body.message, response.status >= 500 ? 'Internal Server Error' : `Request failed (${response.status})`));
   return body;
 }
 

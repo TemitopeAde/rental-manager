@@ -4,7 +4,9 @@ import { auth } from '@wix/essentials';
 const APP_INSTANCE_CACHE_TTL_MS = 30_000;
 const APP_INSTANCE_CACHE_MAX_SITES = 256;
 
-export async function getCurrentAppInstance() {
+export type CurrentAppInstance = appInstances.GetAppInstanceResponse;
+
+export async function getCurrentAppInstance(): Promise<CurrentAppInstance> {
   let siteId: string | undefined;
   try {
     siteId = (await auth.getTokenInfo()).siteId;
@@ -38,7 +40,6 @@ export async function getCurrentAppInstance() {
   return request;
 }
 
-export type CurrentAppInstance = Awaited<ReturnType<typeof getCurrentAppInstance>>;
 
 const appInstanceCache = new Map<string, { value: CurrentAppInstance; expiresAt: number }>();
 const appInstanceRequests = new Map<string, Promise<CurrentAppInstance>>();

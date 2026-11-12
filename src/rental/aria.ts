@@ -63,7 +63,7 @@ async function dispatch(methodName: string, body: Record<string, unknown>) {
       const settings = await loadSettings({ elevate: true });
       const item = await loadItem(text(body.itemId) || text(body.item), { elevate: true });
       if (!item) return { message: 'Item not found.' };
-      return checkRange(item, settings, text(body.start), text(body.end), Number(body.quantity ?? 1), plan.perItemRules, { elevate: true });
+      return checkRange(item, settings, text(body.start), text(body.end), Number(body.quantity ?? 1), plan, { elevate: true });
     }
     case 'get_quote':
       return quoteRental({

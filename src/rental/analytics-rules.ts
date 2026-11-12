@@ -12,6 +12,7 @@ export interface AnalyticsBooking {
   idempotencyKey: string;
   quote: { days: number; rental: number };
   depositOutcome?: { outcome: 'released' | 'kept'; amountKept: number };
+  lateReturn?: { lateDays: number; fee: number };
 }
 
 export interface AnalyticsItem {
@@ -27,6 +28,10 @@ export interface Totals {
   averageDays: number;
   depositsKept: number;
   cancelled: number;
+  /** Rentals that came back late, are still out late, or were never returned. */
+  lateReturns: number;
+  /** Late fees charged so far, whether or not they have been collected. */
+  lateFees: number;
 }
 
 export interface SeriesPoint {
@@ -44,7 +49,7 @@ export interface ItemStat {
 }
 
 // Booked and paid for (or added by hand). Holds, expired holds and cancellations aren't revenue.
-const PAID = new Set(['pending', 'confirmed', 'active', 'overdue', 'returned']);
+const PAID = new Set(['pending', 'confirmed', 'active', 'overdue', 'returned', 'lost']);
 
 export function isPaid(booking: Pick<AnalyticsBooking, 'status'>): boolean {
   return PAID.has(booking.status);
@@ -99,6 +104,8 @@ export function totals(bookings: AnalyticsBooking[]): Totals {
     averageDays: paid.length ? round(days / paid.length) : 0,
     depositsKept: round(paid.reduce((sum, booking) => sum + (booking.depositOutcome?.outcome === 'kept' ? booking.depositOutcome.amountKept : 0), 0)),
     cancelled: bookings.filter((booking) => booking.status === 'cancelled' && wasBooked(booking)).length,
+    lateReturns: paid.filter((booking) => booking.status === 'lost' || (booking.lateReturn?.lateDays ?? 0) > 0).length,
+    lateFees: round(paid.reduce((sum, booking) => sum + (booking.lateReturn?.fee ?? 0), 0)),
   };
 }
 

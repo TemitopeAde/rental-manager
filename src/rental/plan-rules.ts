@@ -9,6 +9,7 @@ export interface PlanLimits {
   maxItems: number | null;
   maxBookingsPerMonth: number | null;
   manualApproval: boolean;
+  orderDeposit: boolean;
   perItemRules: boolean;
   calendar: boolean;
   branding: boolean;
@@ -23,9 +24,9 @@ type TrialFields = Pick<PlanLimits, 'trialAvailable' | 'trialActive' | 'trialEnd
 
 // Internal tiers keep their names; the billing packages are Basic → free, Pro → starter, Business → pro.
 const LIMITS: Record<PlanTier, Omit<PlanLimits, 'label' | keyof TrialFields>> = {
-  free: { tier: 'free', maxItems: 1, maxBookingsPerMonth: 10, manualApproval: false, perItemRules: false, calendar: false, branding: true },
-  starter: { tier: 'starter', maxItems: 30, maxBookingsPerMonth: 150, manualApproval: true, perItemRules: false, calendar: false, branding: false },
-  pro: { tier: 'pro', maxItems: null, maxBookingsPerMonth: null, manualApproval: true, perItemRules: true, calendar: true, branding: false },
+  free: { tier: 'free', maxItems: 1, maxBookingsPerMonth: 10, manualApproval: false, orderDeposit: false, perItemRules: false, calendar: false, branding: true },
+  starter: { tier: 'starter', maxItems: 30, maxBookingsPerMonth: 150, manualApproval: true, orderDeposit: true, perItemRules: false, calendar: false, branding: false },
+  pro: { tier: 'pro', maxItems: null, maxBookingsPerMonth: null, manualApproval: true, orderDeposit: true, perItemRules: true, calendar: true, branding: false },
 };
 
 const labels: Record<PlanTier, PlanLabel> = { free: 'Basic', starter: 'Pro', pro: 'Business' };
@@ -86,7 +87,7 @@ export interface InstanceSnapshot {
  * Wix counts a trial in progress as a paid state, so it gets Business limits. Once it ends, the site
  * is whatever it pays for: Basic when nothing, its package otherwise.
  */
-export function resolvePlan(response: InstanceSnapshot, appId: string): PlanLimits {
+export function resolvePlan(response: InstanceSnapshot, appId: string, options: { unlockAll?: boolean } = {}): PlanLimits {
   const instance = response.instance;
   const billing = instance?.billing;
   const status = billing?.freeTrialInfo?.status;
@@ -101,6 +102,8 @@ export function resolvePlan(response: InstanceSnapshot, appId: string): PlanLimi
     upgradeUrl: upgradeUrl(appId, instance?.instanceId ?? undefined),
   };
 
+  // Development builds get every feature so paid-plan flows can be tested without buying a plan.
+  if (options.unlockAll) return planFor('pro', trial);
   if (isWixStaffOwner(response.site?.ownerInfo)) return planFor('pro', trial);
   if (trialActive) return planFor('pro', trial);
   if (!paid || trial.trialEnded) return planFor('free', trial);

@@ -13,7 +13,7 @@ import { getDashboardRequestCount, readDashboardCache, requestDashboardData, sub
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 
-export type BookingStatus = 'hold' | 'pending' | 'confirmed' | 'active' | 'returned' | 'cancelled' | 'overdue' | 'expired';
+export type BookingStatus = 'hold' | 'pending' | 'confirmed' | 'active' | 'returned' | 'cancelled' | 'overdue' | 'expired' | 'lost';
 
 export interface BookingRow {
   _id: string;
@@ -28,8 +28,14 @@ export interface BookingRow {
   renter: { name: string; email: string; phone?: string };
   quote: { days: number; rental: number; deposit: number; total: number };
   depositOutcome?: { outcome: 'released' | 'kept'; amountKept: number; note: string };
+  /** True when quote.deposit is the whole order's per-order deposit. */
+  orderDeposit?: boolean;
+  refunds?: Array<{ kind: 'item' | 'order' | 'deposit'; amount: number; external: boolean; refundId: string; at: string }>;
+  lateReturn?: { overdueSince: string; lateDays: number; lateHours: number; fee: number; final: boolean; returnedAt?: string; lostFlaggedAt?: string };
+  notices?: string[];
+  paymentRequests?: Array<{ kind: 'late-fee' | 'extension'; amount: number; linkId: string; url: string; status: 'unpaid' | 'paid' | 'inactive'; at: string }>;
   changeRequest?: {
-    type: 'dates' | 'cancel';
+    type: 'dates' | 'cancel' | 'extend';
     startDate: string;
     endDate: string;
     quote: { days: number; rental: number; deposit: number; total: number };
@@ -61,6 +67,8 @@ export interface Settings {
   pickupHour: string;
   returnHour: string;
   approvalMode: 'auto' | 'manual';
+  depositMode: 'item' | 'order';
+  orderDepositAmount: number;
   defaultBufferDays: number;
   defaultMinDays: number;
   defaultMaxDays: number;
@@ -72,10 +80,18 @@ export interface Settings {
   emailRentersRequestUpdates: boolean;
   emailRentersBookingUpdates: boolean;
   emailRentersDepositUpdates: boolean;
+  emailRentersReturnReminders: boolean;
+  emailOwnerOverdueAlerts: boolean;
+  lateGraceMinutes: number;
+  lateFeeMode: 'off' | 'day' | 'hour' | 'rate';
+  lateFeeAmount: number;
+  lateFeeMax: number;
+  lostAfterDays: number;
+  reviewLateRenters: boolean;
+  ownerNotificationEmail: string;
   currency: string;
   language?: string;
-  storeCategoryId: string;
-  storeCategoryName: string;
+  storeCategories: { id: string; name: string }[];
   storeCategoryVersion?: 'V1_CATALOG' | 'V3_CATALOG';
 }
 
@@ -91,6 +107,7 @@ export interface Plan {
   maxItems: number | null;
   maxBookingsPerMonth: number | null;
   manualApproval: boolean;
+  orderDeposit: boolean;
   perItemRules: boolean;
   calendar: boolean;
   trialAvailable: boolean;
@@ -201,18 +218,25 @@ export function useDashboard(): DashboardData {
 
 // Loads one endpoint and exposes loading/error state plus a reload.
 export function useResource<T>(key: string, load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(() => readDashboardCache<T>(key) ?? null);
+  // `loadedKey` says which key `data` belongs to, so a caller whose key changed (a new tab or filter)
+  // can tell the previous key's data apart while the new one loads. A cached copy is shown at once.
+  const [state, setState] = useState<{ key: string; data: T | null }>(() => ({ key, data: readDashboardCache<T>(key) ?? null }));
   const [error, setError] = useState('');
   const [refreshError, setRefreshError] = useState(false);
+  if (state.key !== key) {
+    const cached = readDashboardCache<T>(key);
+    if (cached !== undefined) setState({ key, data: cached });
+  }
   const refresh = useCallback(async () => {
     try {
-      setData(await requestDashboardData(key, load));
+      const data = await requestDashboardData(key, load);
+      setState({ key, data });
       setError('');
       setRefreshError(false);
     } catch (reason) {
       const cached = readDashboardCache<T>(key);
       if (cached !== undefined) {
-        setData(cached);
+        setState({ key, data: cached });
         setRefreshError(true);
         setError('');
       } else {
@@ -226,7 +250,7 @@ export function useResource<T>(key: string, load: () => Promise<T>) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  return { data, error, refresh, refreshError };
+  return { data: state.data, loadedKey: state.key, error, refresh, refreshError };
 }
 
 export function useDashboardRequestPending(): boolean {
@@ -287,9 +311,10 @@ const statusStyle: Record<BookingStatus, { label: string; className: string }> =
   returned: { label: 'Returned', className: 'bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300' },
   cancelled: { label: 'Cancelled', className: 'bg-slate-100 text-slate-500 line-through dark:bg-slate-500/15' },
   expired: { label: 'Expired', className: 'bg-slate-100 text-slate-500 dark:bg-slate-500/15' },
+  lost: { label: 'Not returned', className: 'bg-red-200 text-red-900 dark:bg-red-500/25 dark:text-red-200' },
 };
 
-export const statusOrder: BookingStatus[] = ['pending', 'confirmed', 'active', 'overdue', 'returned', 'cancelled', 'hold', 'expired'];
+export const statusOrder: BookingStatus[] = ['pending', 'confirmed', 'active', 'overdue', 'returned', 'lost', 'cancelled', 'hold', 'expired'];
 
 export function statusLabel(status: BookingStatus, t?: (key: string) => string): string {
   return t ? t(`status.${status}`) : (statusStyle[status]?.label ?? status);
@@ -316,7 +341,7 @@ export function nextAction(status: BookingStatus, t?: (key: string) => string): 
 }
 
 export function canCancel(status: BookingStatus): boolean {
-  return !['cancelled', 'returned', 'expired'].includes(status);
+  return ['pending', 'confirmed', 'hold'].includes(status);
 }
 
 // ---------- Layout pieces ----------

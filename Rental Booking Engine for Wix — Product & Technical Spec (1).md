@@ -305,3 +305,25 @@ The biggest risk is the checkout path: everything depends on the Catalog service
 &#91;embedded content: build milestones · 4 phases, 2 gates\]
 
 Week counts are an estimate for one developer. If the week-2 gate fails, stop and decide between a Wix Stores-based build and a self-hosted checkout before writing any UI.
+
+
+
+Worth building, best value first
+1. Block dates from the dashboard (small, add first)
+The blocking logic and its API route already exist: blockDates and unblockDates in merchant.ts:302-321, called by blocks.ts. The dashboard just has no screen for them. A "Closed dates" panel would need a date picker, a choice of all items or one item, an optional reason, and a list of upcoming blocks with an unblock button. That turns "yes, but only through the AI assistant" into a plain yes.
+
+2. Refund from inside the app (medium, biggest gain)
+Wix's Order Billing API has Refund Payments, which refunds through the payment provider and allows partial amounts. Get Order Refundability says whether a payment can be refunded automatically or has to be refunded by hand (cash, unsupported providers). Where this would plug in:
+
+Decline or cancel: offer "Decline and refund", which refunds that booking's line item (cartLineItemId is already stored).
+Settle deposit: after recording the amount kept, refund the rest in the same step. Today the settle message says "This app does not move the money" (actions.ts:262).
+Payments that can't be refunded through Wix: keep today's behaviour and show the provider link.
+Permission: this needs the Manage Orders permission. Adding it means existing sites have to approve the new permission.
+3. One deposit per order (medium)
+An app can add an "Additional Fees" extension, which puts a separate charge on the cart and checkout. That would mean:
+
+A setting for the deposit type: per item (today), per order, or none.
+A per-order deposit appears once, as its own line called "Refundable deposit", rather than being folded into each item's price as it is now (catalog-item.ts:12).
+Settling and refunding the deposit then works per order, which also makes refund #2 cleaner.
+4. Group bookings by order (small to medium)
+Each item stays its own booking, which is right. But bookings already store ecomOrderId, so the dashboard could group them under each order, with approve or decline for the whole order and one deposit settlement. This answers question 4 properly and goes well with #3.

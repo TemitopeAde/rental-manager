@@ -13,11 +13,16 @@ export default catalog.provideHandlers({
       try {
         const booking = await findBooking(bookingId);
         if (!booking) {
+          console.warn('[rental-catalog] booking not found', JSON.stringify({ bookingId }));
           continue;
         }
         const item = await toCatalogItem(reference, booking);
         if (item) catalogItems.push(item);
+        else console.warn('[rental-catalog] booking not sellable (item missing or hold expired)', JSON.stringify({
+          bookingId, itemId: booking.itemId, status: booking.status, holdExpiresAt: booking.holdExpiresAt,
+        }));
       } catch (error) {
+        console.error('[rental-catalog] failed to build catalog item', JSON.stringify({ bookingId }), error);
       }
     }
     return { catalogItems };

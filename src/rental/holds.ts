@@ -1,9 +1,12 @@
-import { collections, hasMembersAreaApp } from './constants';
-import { getCurrentAppInstance } from './app-instance';
-import { checkRange, loadItem, loadSettings } from './availability';
-import type { Booking, BookingStatus, DateChangeRequest, Quote, Renter } from './models';
+import { collections } from './constants';
+import { getCurrentAppInstance, type CurrentAppInstance } from './app-instance';
+import { checkRange, closedInWindow, loadItem, loadSettings, resolveRules, usageInWindow } from './availability';
+import { availabilityWindowEnd, type ItemAvailability } from './calendar-rules';
+import { addDays, todayInTimezone } from './dates';
+import type { Booking, BookingStatus, DateChangeRequest, LateReturn, PaymentRequest, Quote, Renter } from './models';
 import { bool, num, text } from './models';
-import { canBookItem, readPlan } from './plans';
+import { asRefundRecords } from './refund-rules';
+import { canBookItem, readPlan, type PlanLimits } from './plans';
 import { claimUnitsForBooking } from './claim';
 import { getRow, insertRow, queryRows, removeRows, updateRow, type Access, type Row } from './store';
 
@@ -32,13 +35,44 @@ function asChangeRequest(value: unknown): DateChangeRequest | undefined {
   const request = value as Record<string, unknown>;
   if (!text(request.startDate) || !text(request.endDate)) return undefined;
   return {
-    type: text(request.type) === 'cancel' ? 'cancel' : 'dates',
+    type: text(request.type) === 'cancel' ? 'cancel' : text(request.type) === 'extend' ? 'extend' : 'dates',
     startDate: text(request.startDate),
     endDate: text(request.endDate),
     quote: asQuote(request.quote),
     requestedAt: text(request.requestedAt),
     status: text(request.status) === 'declined' ? 'declined' : 'pending',
   };
+}
+
+function asLateReturn(value: unknown): LateReturn | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const late = value as Record<string, unknown>;
+  return {
+    overdueSince: text(late.overdueSince),
+    lateDays: num(late.lateDays),
+    lateHours: num(late.lateHours),
+    fee: num(late.fee),
+    final: bool(late.final),
+    returnedAt: text(late.returnedAt) || undefined,
+    lostFlaggedAt: text(late.lostFlaggedAt) || undefined,
+  };
+}
+
+function asPaymentRequests(value: unknown): PaymentRequest[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const request = entry as Record<string, unknown>;
+    const status = text(request.status);
+    return [{
+      kind: text(request.kind) === 'extension' ? 'extension' : 'late-fee',
+      amount: num(request.amount),
+      linkId: text(request.linkId),
+      url: text(request.url),
+      status: status === 'paid' || status === 'inactive' ? status : 'unpaid',
+      at: text(request.at),
+    } satisfies PaymentRequest];
+  });
 }
 
 export function asBooking(row: Row): Booking {
@@ -68,8 +102,13 @@ export function asBooking(row: Row): Booking {
             note: text((outcome as Record<string, unknown>).note),
           }
         : undefined,
+    orderDeposit: bool(row.orderDeposit),
+    refunds: asRefundRecords(row.refunds),
     idempotencyKey: text(row.idempotencyKey),
     refundNeeded: bool(row.refundNeeded),
+    lateReturn: asLateReturn(row.lateReturn),
+    notices: Array.isArray(row.notices) ? row.notices.filter((key): key is string => typeof key === 'string') : [],
+    paymentRequests: asPaymentRequests(row.paymentRequests),
   };
 }
 
@@ -130,13 +169,24 @@ export interface HoldRequest {
   idempotencyKey: string;
 }
 
-export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>, excludeBookingId = '', enforcePlan = false) {
+/** Values a caller already fetched this request, so the quote doesn't fetch them again. */
+export interface QuoteContext {
+  plan?: PlanLimits;
+  appInstance?: CurrentAppInstance | null;
+}
+
+export async function quoteRental(
+  input: Omit<HoldRequest, 'idempotencyKey'>,
+  excludeBookingId = '',
+  enforcePlan = false,
+  context: QuoteContext = {},
+) {
   await expireHolds();
-  const plan = await readPlan(merchant);
+  const plan = context.plan ?? await readPlan(merchant, context.appInstance);
   if (enforcePlan && !(await canBookItem(input.itemId, merchant, plan))) {
     return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
   }
-  const settings = await loadSettings(merchant);
+  const settings = await loadSettings(merchant, context.appInstance);
   const item = await loadItem(input.itemId, merchant);
   if (!item) return { ok: false as const, message: 'Item not found.' };
   const availability = await checkRange(
@@ -145,7 +195,7 @@ export async function quoteRental(input: Omit<HoldRequest, 'idempotencyKey'>, ex
     input.startDate,
     input.endDate,
     input.quantity,
-    plan.perItemRules,
+    plan,
     merchant,
     excludeBookingId,
   );
@@ -158,15 +208,17 @@ export async function holdRental(input: HoldRequest) {
     .limit(1)
     .find();
   const prior = existing.items[0];
-  if (prior) return { ok: true as const, booking: asBooking(prior as Row), replayed: true };
-
-  const instance = await getCurrentAppInstance().catch(() => null);
-  const membersAreaInstalled = hasMembersAreaApp(instance?.site?.installedWixApps ?? []);
-  if (!membersAreaInstalled) {
-    return { ok: false as const, message: "Online booking isn't open yet. The shop is still finishing its setup." };
+  if (prior) {
+    const booking = asBooking(prior as Row);
+    // Replay only a hold that still owns its units; an expired one must be re-requested.
+    if (catalogAvailable(booking)) return { ok: true as const, booking, replayed: true };
+    return { ok: false as const, message: 'Your hold expired. Please choose your dates again.' };
   }
 
-  const plan = await readPlan(merchant);
+  // Fetched once and shared: the plan and the site currency both come from the app instance.
+  // `undefined` (not null) on failure lets readPlan/loadSettings fall back to their own lookup.
+  const appInstance = await getCurrentAppInstance().catch(() => undefined);
+  const plan = await readPlan(merchant, appInstance);
   if (!(await canBookItem(input.itemId, merchant, plan))) {
     return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
   }
@@ -185,7 +237,7 @@ export async function holdRental(input: HoldRequest) {
     return { ok: false as const, message: 'This site has reached its monthly booking limit. Ask the merchant to upgrade.' };
   }
 
-  const quoted = await quoteRental(input);
+  const quoted = await quoteRental(input, '', false, { plan, appInstance });
   if (!quoted.ok || !quoted.quote || !quoted.item) return { ok: false as const, message: quoted.message };
 
   const reference = newReference();
@@ -241,9 +293,57 @@ export async function extendHold(bookingId: string) {
 }
 
 export function catalogAvailable(booking: Booking): boolean {
-  if (booking.status === 'expired' || booking.status === 'cancelled' || booking.status === 'returned') return false;
+  if (booking.status === 'expired' || booking.status === 'cancelled' || booking.status === 'returned' || booking.status === 'lost') return false;
   if (booking.status === 'hold' && booking.holdExpiresAt && Date.parse(booking.holdExpiresAt) < Date.now()) {
     return false;
   }
   return true;
+}
+
+/** How far ahead a pickup can be booked; matches the limit checkRange enforces. */
+const BOOKING_HORIZON_DAYS = 180;
+
+/**
+ * Everything the site calendar needs to grey out dates for one item: units claimed per day
+ * (paid bookings and holds that haven't expired), closed days, and the length rules.
+ * Expired holds are released first, so an abandoned checkout stops blocking its dates.
+ */
+export async function itemAvailability(itemId: string): Promise<ItemAvailability | null> {
+  await expireHolds();
+  const appInstance = await getCurrentAppInstance().catch(() => undefined);
+  const [item, settings, plan] = await Promise.all([
+    loadItem(itemId, merchant),
+    loadSettings(merchant, appInstance),
+    readPlan(merchant, appInstance),
+  ]);
+  if (!item) return null;
+
+  const today = todayInTimezone(settings.timezone);
+  // The length rules don't depend on the dates, so any range resolves them.
+  const rules = resolveRules(item, settings, today, today, plan.perItemRules);
+  const earliestStart = addDays(today, rules.leadDays);
+  const latestStart = addDays(today, BOOKING_HORIZON_DAYS);
+  const windowEnd = availabilityWindowEnd(latestStart, rules.maxDays, rules.bufferDays);
+  const bookable = item.status === 'active' && (await canBookItem(item._id, merchant, plan));
+
+  const [used, closed] = bookable
+    ? await Promise.all([
+      usageInWindow(item._id, earliestStart, windowEnd, merchant),
+      closedInWindow(item._id, earliestStart, windowEnd, merchant),
+    ])
+    : [{}, []];
+
+  return {
+    itemId: item._id,
+    bookable,
+    unitCount: item.unitCount,
+    used,
+    closed,
+    earliestStart,
+    latestStart,
+    minDays: rules.minDays,
+    maxDays: rules.maxDays,
+    bufferDays: rules.bufferDays,
+    countReturnDay: settings.countReturnDay,
+  };
 }

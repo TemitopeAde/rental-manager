@@ -3,6 +3,7 @@ import { findActiveItem } from '../../../rental/merchant';
 import { loadSettings } from '../../../rental/availability';
 import { json, str } from '../../../rental/http';
 import { canBookItem, readPlan } from '../../../rental/plans';
+import { orderDepositAmount } from '../../../rental/deposit-rules';
 
 export const GET: APIRoute = async ({ request }) => {
   const slug = str(new URL(request.url).searchParams.get('slug')).trim();
@@ -14,5 +15,11 @@ export const GET: APIRoute = async ({ request }) => {
   ]);
   if (!item) return json({ message: 'This rental is no longer available.' }, 404);
   if (!(await canBookItem(item._id, { elevate: true }, plan))) return json({ message: 'This rental is not currently available for new bookings.' }, 404);
-  return json({ item, currency: settings.currency, language: settings.language });
+  const orderDeposit = orderDepositAmount(settings, plan.orderDeposit);
+  return json({
+    item: orderDeposit > 0 ? { ...item, depositAmount: 0 } : item,
+    currency: settings.currency,
+    language: settings.language,
+    orderDeposit,
+  });
 };

@@ -47,5 +47,7 @@ import planReactivated from './extensions/backend/events/plan-reactivated/plan-r
 
 import planTransferred from './extensions/backend/events/plan-transferred/plan-transferred.extension.ts';
 
+import rentalDeposit from './extensions/backend/service-plugins/rental-deposit/rental-deposit.extension.ts';
+
 export default app()
-  .use(myPage).use(dataCollections).use(orderApproved).use(orderCanceled).use(rentalTools).use(rentalTools1).use(rentalCatalogPlugin).use(rentalBooking).use(rentalCatalog).use(rentalBooking1).use(rentalCatalog1).use(rentalDetails).use(rentalStoreProduct).use(myRentals).use(rentalDetails1).use(myRentals1).use(appInstalled).use(appRemoved).use(paidPlanPurchased).use(paidPlanChanged).use(paidPlanAutoRenewalCancelled).use(planConvertedToPaid).use(planReactivated).use(planTransferred);
+  .use(myPage).use(dataCollections).use(orderApproved).use(orderCanceled).use(rentalTools).use(rentalTools1).use(rentalCatalogPlugin).use(rentalBooking).use(rentalCatalog).use(rentalBooking1).use(rentalCatalog1).use(rentalDetails).use(rentalStoreProduct).use(myRentals).use(rentalDetails1).use(myRentals1).use(appInstalled).use(appRemoved).use(paidPlanPurchased).use(paidPlanChanged).use(paidPlanAutoRenewalCancelled).use(planConvertedToPaid).use(planReactivated).use(planTransferred).use(rentalDeposit);

@@ -9,7 +9,7 @@ import { useSiteI18n } from './i18n';
 import { RentalCalendar } from './RentalCalendar';
 import styles from './my-rentals.module.css';
 
-type Status = 'pending' | 'confirmed' | 'active' | 'overdue' | 'returned' | 'cancelled';
+type Status = 'pending' | 'confirmed' | 'active' | 'overdue' | 'returned' | 'cancelled' | 'lost';
 
 interface Quote {
   days: number;
@@ -28,7 +28,8 @@ interface RenterBooking {
   status: Status;
   quote: Quote;
   refundNeeded: boolean;
-  changeRequest?: { type: 'dates' | 'cancel'; startDate: string; endDate: string; quote: Quote; status: 'pending' | 'declined' };
+  changeRequest?: { type: 'dates' | 'cancel' | 'extend'; startDate: string; endDate: string; quote: Quote; status: 'pending' | 'declined' };
+  lateReturn?: { lateDays: number; fee: number; final: boolean };
 }
 
 const statusLabel: Record<Status, string> = {
@@ -38,9 +39,12 @@ const statusLabel: Record<Status, string> = {
   overdue: 'Overdue',
   returned: 'Returned',
   cancelled: 'Cancelled',
+  lost: 'Not returned',
 };
 
 const changeable: Status[] = ['pending', 'confirmed'];
+// Out on rent, late or not: the renter can ask to keep it longer.
+const extendable: Status[] = ['active', 'overdue'];
 
 // Shown in the Editor, where no member is logged in, so the layout can be designed.
 const samples: RenterBooking[] = [
@@ -106,7 +110,7 @@ export function MyRentals({
   const [apiLanguage, setApiLanguage] = useState<string | undefined>();
   const [error, setError] = useState('');
 
-  const { t, isRtl, money, dateRange, dateLocale } = useSiteI18n(language || apiLanguage);
+  const { t, isRtl, money, dateRange, dateLocale, shortDate } = useSiteI18n(language || apiLanguage);
 
   const refresh = useCallback(async () => {
     const result = await loadBookings();
@@ -132,8 +136,10 @@ export function MyRentals({
   }
 
   const today = isoDate(new Date());
+  // A rental that is still out stays at the top even once its return date has passed.
   const isUpcoming = (booking: RenterBooking) =>
-    booking.endDate >= today && booking.status !== 'cancelled' && booking.status !== 'returned';
+    extendable.includes(booking.status) ||
+    (booking.endDate >= today && booking.status !== 'cancelled' && booking.status !== 'returned' && booking.status !== 'lost');
   const upcoming = bookings.filter(isUpcoming).sort((a, b) => a.startDate.localeCompare(b.startDate));
   const past = bookings.filter((booking) => !isUpcoming(booking));
 
@@ -180,6 +186,7 @@ export function MyRentals({
                     t={t}
                     money={money}
                     dateRange={dateRange}
+                    shortDate={shortDate}
                     dateLocale={dateLocale}
                     isRtl={isRtl}
                   />
@@ -199,6 +206,7 @@ export function MyRentals({
                     t={t}
                     money={money}
                     dateRange={dateRange}
+                    shortDate={shortDate}
                     dateLocale={dateLocale}
                     isRtl={isRtl}
                   />
@@ -252,6 +260,7 @@ function BookingCard({
   t,
   money,
   dateRange,
+  shortDate,
   dateLocale,
   isRtl,
 }: {
@@ -262,13 +271,16 @@ function BookingCard({
   t: (key: any, params?: any) => string;
   money: (amount: number, currency?: string) => string;
   dateRange: (start: string, end: string) => string;
+  shortDate: (date: Date | undefined) => string;
   dateLocale: any;
   isRtl: boolean;
 }) {
-  const [mode, setMode] = useState<'view' | 'cancel' | 'change'>('view');
+  const [mode, setMode] = useState<'view' | 'cancel' | 'change' | 'extend'>('view');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const shortDay = (day: string) => shortDate(new Date(`${day}T00:00:00`));
   const canChange = changeable.includes(booking.status);
+  const canExtend = extendable.includes(booking.status);
   const request = booking.changeRequest;
 
   const statusLabel: Record<Status, string> = {
@@ -278,6 +290,7 @@ function BookingCard({
     overdue: t('status_overdue'),
     returned: t('status_returned'),
     cancelled: t('status_cancelled'),
+    lost: t('status_lost'),
   };
 
   async function run(payload: Record<string, unknown>) {
@@ -330,18 +343,31 @@ function BookingCard({
         ) : null}
       </dl>
 
+      {booking.status === 'overdue' ? (
+        <p className={styles.notice} data-tone="error" role="status">
+          {t('overdue_notice', { date: shortDay(booking.endDate) })}
+          {booking.lateReturn?.fee ? ` ${t('late_fee_so_far', { amount: money(booking.lateReturn.fee, currency) })}` : ''}
+        </p>
+      ) : null}
+      {booking.status === 'returned' && booking.lateReturn?.fee ? (
+        <p className={styles.muted}>{t('late_fee_final', { amount: money(booking.lateReturn.fee, currency) })}</p>
+      ) : null}
       {request?.status === 'pending' ? (
         <p className={styles.notice} data-tone="info">
           {request.type === 'cancel'
             ? t('request_cancel_pending')
-            : t('request_change_pending', { range: dateRange(request.startDate, request.endDate) })}
+            : request.type === 'extend'
+              ? t('request_extend_pending', { date: shortDay(request.endDate) })
+              : t('request_change_pending', { range: dateRange(request.startDate, request.endDate) })}
         </p>
       ) : null}
       {request?.status === 'declined' ? (
         <p className={styles.notice} data-tone="error">
           {request.type === 'cancel'
             ? t('request_cancel_declined')
-            : t('request_change_declined', { range: dateRange(request.startDate, request.endDate) })}
+            : request.type === 'extend'
+              ? t('request_extend_declined', { date: shortDay(request.endDate) })
+              : t('request_change_declined', { range: dateRange(request.startDate, request.endDate) })}
         </p>
       ) : null}
       {booking.status === 'cancelled' && booking.refundNeeded ? (
@@ -355,6 +381,27 @@ function BookingCard({
           <button type="button" className={styles.secondary} onClick={() => { setMessage(null); setMode('change'); }}>{t('change_dates')}</button>
           <button type="button" className={styles.danger} onClick={() => { setMessage(null); setMode('cancel'); }}>{t('cancel_rental')}</button>
         </div>
+      ) : null}
+
+      {canExtend && mode === 'view' && request?.status !== 'pending' ? (
+        <div className={styles.actions}>
+          <button type="button" className={styles.secondary} onClick={() => { setMessage(null); setMode('extend'); }}>{t('extend_rental')}</button>
+        </div>
+      ) : null}
+
+      {mode === 'extend' ? (
+        <ExtendRental
+          booking={booking}
+          currency={currency}
+          preview={preview}
+          busy={busy}
+          today={isoDate(new Date())}
+          onCancel={() => setMode('view')}
+          onSubmit={(endDate) => void run({ action: 'extend', endDate })}
+          t={t}
+          money={money}
+          shortDay={shortDay}
+        />
       ) : null}
 
       {mode === 'cancel' ? (
@@ -471,6 +518,89 @@ function ChangeDates({
           <span className={styles.buttonContent}>
             {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
             <span>{t('request_new_dates')}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ExtendRental({
+  booking,
+  currency,
+  preview,
+  busy,
+  today,
+  onCancel,
+  onSubmit,
+  t,
+  money,
+  shortDay,
+}: {
+  booking: RenterBooking;
+  currency?: string;
+  preview: boolean;
+  busy: boolean;
+  today: string;
+  onCancel: () => void;
+  onSubmit: (endDate: string) => void;
+  t: (key: any, params?: any) => string;
+  money: (amount: number, currency?: string) => string;
+  shortDay: (day: string) => string;
+}) {
+  const earliest = booking.endDate >= today ? isoDate(addDays(new Date(`${booking.endDate}T00:00:00`), 1)) : today;
+  const [endDate, setEndDate] = useState('');
+  const [quote, setQuote] = useState<{ ok: boolean; message?: string; quote?: Quote; difference?: number } | null>(null);
+
+  useEffect(() => {
+    setQuote(null);
+    if (!endDate || preview) return;
+    const timer = setTimeout(() => {
+      post<{ ok: boolean; quote: Quote; difference: number }>('/api/rentals/my-bookings', {
+        action: 'quote-extend',
+        reference: booking.reference,
+        endDate,
+      })
+        .then(setQuote)
+        .catch((error: Error) => setQuote({ ok: false, message: error.message }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [booking.reference, endDate, preview]);
+
+  const difference = quote?.ok ? quote.difference ?? 0 : 0;
+
+  return (
+    <div className={styles.change}>
+      <p className={styles.muted}>{t('extend_prompt')}</p>
+      <label className={styles.dateField}>
+        <span>{t('new_return_date')}</span>
+        <input
+          type="date"
+          className={styles.dateInput}
+          min={earliest}
+          value={endDate}
+          onChange={(event) => setEndDate(event.target.value)}
+        />
+      </label>
+      {endDate && quote?.ok && quote.quote ? (
+        <p className={styles.muted}>
+          {t('extend_until', { date: shortDay(endDate) })} · {t('new_total_label', { total: money(quote.quote.total, currency) })}
+          {difference > 0 ? ` ${t('more', { amount: money(difference, currency) })}` : ` ${t('no_change')}`}
+        </p>
+      ) : null}
+      {quote && !quote.ok ? <p className={styles.notice} data-tone="error" role="alert">{quote.message}</p> : null}
+      <div className={styles.actions}>
+        <button type="button" className={styles.secondary} disabled={busy} onClick={onCancel}>{t('back_action')}</button>
+        <button
+          type="button"
+          className={styles.action}
+          disabled={busy || !endDate || (!preview && !quote?.ok)}
+          aria-busy={busy}
+          onClick={() => onSubmit(endDate)}
+        >
+          <span className={styles.buttonContent}>
+            {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
+            <span>{t('request_extension')}</span>
           </span>
         </button>
       </div>
