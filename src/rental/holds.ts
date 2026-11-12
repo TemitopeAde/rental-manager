@@ -120,19 +120,44 @@ async function audit(action: string, summary: string, bookingId: string, source:
   );
 }
 
+/**
+ * Until when this server instance knows no hold can have expired, so availability checks can skip
+ * the scan. A new hold always lasts at least HOLD_MINUTES (15), longer than this 5-minute cap, so a
+ * hold created elsewhere after a scan can't expire inside the skipped window.
+ */
+const HOLD_SCAN_MAX_SKIP_MS = 5 * 60 * 1000;
+let holdsCleanUntil = 0;
+let holdScan: Promise<number> | null = null;
+
 export async function expireHolds(): Promise<number> {
+  if (Date.now() < holdsCleanUntil) return 0;
+  // Concurrent requests share one scan instead of each running their own.
+  holdScan ??= scanExpiredHolds().finally(() => { holdScan = null; });
+  return holdScan;
+}
+
+async function scanExpiredHolds(): Promise<number> {
   const result = await queryRows(collections.bookings, merchant).eq('status', 'hold').limit(200).find();
   const now = Date.now();
-  let expired = 0;
-  for (const row of result.items) {
-    const booking = asBooking(row as Row);
+  let nextExpiry = Number.POSITIVE_INFINITY;
+  const due: Row[] = [];
+  for (const row of result.items as Row[]) {
+    const booking = asBooking(row);
     const expiry = booking.holdExpiresAt ? Date.parse(booking.holdExpiresAt) : 0;
-    if (expiry && expiry > now) continue;
-    await releaseUnits(booking._id);
-    await updateRow(collections.bookings, { ...row, status: 'expired' } as Row, merchant);
-    expired += 1;
+    if (expiry && expiry > now) {
+      nextExpiry = Math.min(nextExpiry, expiry);
+      continue;
+    }
+    due.push(row);
   }
-  return expired;
+  // Release expired holds side by side; each one is independent.
+  await Promise.all(due.map(async (row) => {
+    await releaseUnits(row._id);
+    await updateRow(collections.bookings, { ...row, status: 'expired' } as Row, merchant);
+  }));
+  // With more holds than one page we haven't seen them all, so don't skip the next scan.
+  if (!result.hasNext()) holdsCleanUntil = Math.min(nextExpiry, now + HOLD_SCAN_MAX_SKIP_MS);
+  return due.length;
 }
 
 // `fromDate` keeps the claims before that date, so an early return frees only the days still ahead.
@@ -181,24 +206,26 @@ export async function quoteRental(
   enforcePlan = false,
   context: QuoteContext = {},
 ) {
-  await expireHolds();
-  const plan = context.plan ?? await readPlan(merchant, context.appInstance);
-  if (enforcePlan && !(await canBookItem(input.itemId, merchant, plan))) {
+  // Everything independent loads at once. The app instance is cached per site and shared by the plan
+  // and the currency; `undefined` on failure lets readPlan/loadSettings fall back to their own lookup.
+  // Expired holds are released before the range check below reads which units are taken.
+  const appInstance = context.appInstance !== undefined
+    ? Promise.resolve(context.appInstance)
+    : getCurrentAppInstance().catch(() => undefined);
+  const [plan, settings, item] = await Promise.all([
+    context.plan ?? appInstance.then((instance) => readPlan(merchant, instance)),
+    appInstance.then((instance) => loadSettings(merchant, instance)),
+    loadItem(input.itemId, merchant),
+    expireHolds(),
+  ]);
+  if (!item) return { ok: false as const, message: 'Item not found.' };
+  const [allowed, availability] = await Promise.all([
+    enforcePlan ? canBookItem(item._id, merchant, plan) : Promise.resolve(true),
+    checkRange(item, settings, input.startDate, input.endDate, input.quantity, plan, merchant, excludeBookingId),
+  ]);
+  if (!allowed) {
     return { ok: false as const, message: `New bookings for this item require an upgrade from the ${plan.label} plan.` };
   }
-  const settings = await loadSettings(merchant, context.appInstance);
-  const item = await loadItem(input.itemId, merchant);
-  if (!item) return { ok: false as const, message: 'Item not found.' };
-  const availability = await checkRange(
-    item,
-    settings,
-    input.startDate,
-    input.endDate,
-    input.quantity,
-    plan,
-    merchant,
-    excludeBookingId,
-  );
   return { ...availability, currency: settings.currency, item };
 }
 
@@ -309,12 +336,12 @@ const BOOKING_HORIZON_DAYS = 180;
  * Expired holds are released first, so an abandoned checkout stops blocking its dates.
  */
 export async function itemAvailability(itemId: string): Promise<ItemAvailability | null> {
-  await expireHolds();
-  const appInstance = await getCurrentAppInstance().catch(() => undefined);
+  const appInstance = getCurrentAppInstance().catch(() => undefined);
   const [item, settings, plan] = await Promise.all([
     loadItem(itemId, merchant),
-    loadSettings(merchant, appInstance),
-    readPlan(merchant, appInstance),
+    appInstance.then((instance) => loadSettings(merchant, instance)),
+    appInstance.then((instance) => readPlan(merchant, instance)),
+    expireHolds(),
   ]);
   if (!item) return null;
 
@@ -324,14 +351,18 @@ export async function itemAvailability(itemId: string): Promise<ItemAvailability
   const earliestStart = addDays(today, rules.leadDays);
   const latestStart = addDays(today, BOOKING_HORIZON_DAYS);
   const windowEnd = availabilityWindowEnd(latestStart, rules.maxDays, rules.bufferDays);
-  const bookable = item.status === 'active' && (await canBookItem(item._id, merchant, plan));
-
-  const [used, closed] = bookable
+  const active = item.status === 'active';
+  // The plan check and the calendar reads don't depend on each other, so they run together.
+  const [allowed, windowUsed, windowClosed] = active
     ? await Promise.all([
+      canBookItem(item._id, merchant, plan),
       usageInWindow(item._id, earliestStart, windowEnd, merchant),
       closedInWindow(item._id, earliestStart, windowEnd, merchant),
     ])
-    : [{}, []];
+    : [false, {}, []];
+  const bookable = active && allowed;
+  const used = bookable ? windowUsed : {};
+  const closed = bookable ? windowClosed : [];
 
   return {
     itemId: item._id,

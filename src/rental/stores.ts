@@ -279,33 +279,70 @@ function productOption(product: unknown, version: StoreCatalogVersion): StorePro
   return { id, name: stringValue(row.name) || 'Untitled product', price, image, visible: row.visible !== false };
 }
 
-// Backs the product picker in the item form. V3 has fuzzy name search; V1 only supports a
-// name prefix, so typing "Cam" finds "Camera kit" but not "Pro camera".
-export async function searchStoreProducts(term: string, limit = 20): Promise<{ version: CatalogState; products: StoreProductOption[]; error?: string }> {
+export interface StoreProductPage {
+  version: CatalogState;
+  products: StoreProductOption[];
+  /** Pass back as `cursor` for the next page; empty when this is the last page. */
+  nextCursor: string;
+  /** Total matching products, when Wix reports it (first page only). */
+  total?: number;
+  error?: string;
+}
+
+// Backs the product pickers. V3 has fuzzy name search; V1 only supports a name prefix, so typing
+// "Cam" finds "Camera kit" but not "Pro camera". Results are paged so a store with thousands of
+// products can be walked page by page: V3 pages by cursor, V1 by offset (sent as the cursor string).
+export async function searchStoreProducts(term: string, limit = 20, cursor = ''): Promise<StoreProductPage> {
   const { version, error: detectError } = await detectCatalog();
-  if (version === 'STORES_NOT_INSTALLED') return { version, products: [], error: detectError };
+  if (version === 'STORES_NOT_INSTALLED') return { version, products: [], nextCursor: '', error: detectError };
   const search = term.trim();
+  const size = Math.min(100, Math.max(1, limit));
   const toOptions = (rows: unknown[]) => rows.flatMap((row) => productOption(row, version) ?? []);
 
   try {
     if (version === 'V3_CATALOG') {
+      const searchDetails = search ? { expression: search, fields: ['name' as const], fuzzy: true } : undefined;
+      // Counting is a separate call; only the first page needs it, and a failure just hides the total.
+      const total = cursor
+        ? Promise.resolve(undefined)
+        : auth.elevate(productsV3.countProducts)(searchDetails ? { search: searchDetails } : {})
+          .then((result) => result.count)
+          .catch(() => undefined);
       if (!search) {
-        const result = await auth.elevate(productsV3.queryProducts)().limit(limit).find();
-        return { version, products: toOptions(result.items) };
+        const query = auth.elevate(productsV3.queryProducts)();
+        const result = await (cursor ? query.skipTo(cursor) : query).limit(size).find();
+        return {
+          version,
+          products: toOptions(result.items),
+          nextCursor: result.hasNext() ? result.cursors.next ?? '' : '',
+          total: await total,
+        };
       }
-      const result = await auth.elevate(productsV3.searchProducts)({
-        cursorPaging: { limit },
-        search: { expression: search, fields: ['name'], fuzzy: true },
-      });
-      return { version, products: toOptions(result.products ?? []) };
+      // A follow-up page sends only the cursor; Wix keeps the original search with it.
+      const result = await auth.elevate(productsV3.searchProducts)(
+        cursor ? { cursorPaging: { limit: size, cursor } } : { cursorPaging: { limit: size }, search: searchDetails },
+        {},
+      );
+      return {
+        version,
+        products: toOptions(result.products ?? []),
+        nextCursor: result.pagingMetadata?.cursors?.next ?? '',
+        total: await total,
+      };
     }
 
+    const offset = Math.max(0, Number.parseInt(cursor, 10) || 0);
     let query = auth.elevate(products.queryProducts)();
     if (search) query = query.startsWith('name', search);
-    const result = await query.limit(limit).find();
-    return { version, products: toOptions(result.items) };
+    const result = await query.skip(offset).limit(size).find();
+    return {
+      version,
+      products: toOptions(result.items),
+      nextCursor: result.hasNext() ? String(offset + result.items.length) : '',
+      total: result.totalCount ?? undefined,
+    };
   } catch (error) {
-    return { version, products: [], error: `Couldn't search products: ${message(error)}` };
+    return { version, products: [], nextCursor: '', error: `Couldn't search products: ${message(error)}` };
   }
 }
 

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ImagePlus, Package, Pencil, Plus, X } from 'lucide-react';
+import { ImagePlus, Package, Pencil, Plus, Search, ShoppingBag, Trash2, X } from 'lucide-react';
 import { dashboard } from '@wix/dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -14,6 +15,9 @@ import { cn } from '@/lib/utils';
 import { EmptyState, LoadingState, numberField, SectionHeader, TextField, useDashboard, type ItemRow } from './shared';
 import { StoreProductPicker } from './store-product-picker';
 import { useToast } from './toast';
+import { DeleteItemDialog } from './delete-item-dialog';
+import { StoreImportDialog } from './store-import-dialog';
+import { ItemsBulkBar, SelectBox } from './items-bulk';
 
 const statusTone: Record<ItemRow['status'], string> = {
   active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300',
@@ -21,16 +25,52 @@ const statusTone: Record<ItemRow['status'], string> = {
   archived: 'bg-slate-100 text-slate-500 dark:bg-slate-500/15',
 };
 
+/** Rows rendered at a time; stores that import their whole catalog can have thousands of items. */
+const ROWS_PER_PAGE = 100;
+
 export function ItemsSection() {
-  const { items, plan, settings, money, reload, canBook, loading } = useDashboard();
+  const { items, plan, settings, money, reload, canBook, loading, storeCatalogVersion } = useDashboard();
   const { t } = useI18n();
   const [editing, setEditing] = useState<ItemRow | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<ItemRow | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [query, setQuery] = useState('');
+  const [shown, setShown] = useState(ROWS_PER_PAGE);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   if (loading || !plan || !settings) return <LoadingState />;
 
   const live = items.filter((item) => item.status !== 'archived').length;
   const atLimit = plan.maxItems !== null && live >= plan.maxItems;
   const overLimit = plan.maxItems !== null && live > plan.maxItems;
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? items.filter((item) => item.name.toLowerCase().includes(needle) || item.category.toLowerCase().includes(needle))
+    : items;
+  const visible = filtered.slice(0, shown);
+  // Drop selections for items that no longer exist (deleted, or reloaded away).
+  const selectedIds = items.filter((item) => selected.has(item._id)).map((item) => item._id);
+  const visibleSelected = visible.filter((item) => selected.has(item._id)).length;
+  const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
+  const allFilteredSelected = filtered.length > 0 && filtered.every((item) => selected.has(item._id));
+  const toggleOne = (id: string, on: boolean) => setSelected((current) => {
+    const next = new Set(current);
+    if (on) next.add(id);
+    else next.delete(id);
+    return next;
+  });
+  const toggleVisible = (on: boolean) => setSelected((current) => {
+    const next = new Set(current);
+    visible.forEach((item) => (on ? next.add(item._id) : next.delete(item._id)));
+    return next;
+  });
+  const storesInstalled = storeCatalogVersion !== 'STORES_NOT_INSTALLED';
+  const slotsLeft = plan.maxItems === null ? null : Math.max(0, plan.maxItems - live);
+  const importButton = storesInstalled ? (
+    <Button variant="outline" disabled={atLimit} onClick={() => setImporting(true)}>
+      <ShoppingBag data-icon="inline-start" />{t('store_import.open')}
+    </Button>
+  ) : null;
   const usage = plan.maxItems ? Math.min(100, (live / plan.maxItems) * 100) : 0;
   const upgrade = plan.upgradeUrl && !plan.trialActive ? (
     <Button asChild size="sm" variant={atLimit ? 'default' : 'outline'}>
@@ -55,9 +95,12 @@ export function ItemsSection() {
         title={t('items.title')}
         description={t('items.description')}
         actions={
-          <Button disabled={atLimit} onClick={() => setEditing('new')}>
-            <Plus data-icon="inline-start" />{t('action.add_item')}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {importButton}
+            <Button disabled={atLimit} onClick={() => setEditing('new')}>
+              <Plus data-icon="inline-start" />{t('action.add_item')}
+            </Button>
+          </div>
         }
       />
 
@@ -87,16 +130,57 @@ export function ItemsSection() {
         <EmptyState
           icon={Package}
           title={t('items.empty_title')}
-          action={<Button onClick={() => setEditing('new')}><Plus data-icon="inline-start" />{t('action.add_item')}</Button>}
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              {importButton}
+              <Button onClick={() => setEditing('new')}><Plus data-icon="inline-start" />{t('action.add_item')}</Button>
+            </div>
+          }
         >
           {t('items.empty_desc')}
+          {storesInstalled ? ` ${t('store_import.empty_hint')}` : ''}
         </EmptyState>
       ) : (
+        <>
+        {items.length > 10 ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                className="pl-8"
+                placeholder={t('items.search_placeholder')}
+                aria-label={t('items.search_placeholder')}
+                value={query}
+                onChange={(event) => { setQuery(event.target.value); setShown(ROWS_PER_PAGE); }}
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">{t('items.showing', { shown: visible.length, total: filtered.length })}</span>
+          </div>
+        ) : null}
+        {selectedIds.length > 0 ? (
+          <ItemsBulkBar selectedIds={selectedIds} onClear={() => setSelected(new Set())} onDone={reload} />
+        ) : null}
+        {allVisibleSelected && filtered.length > visible.length && !allFilteredSelected ? (
+          <div className="rounded-lg bg-muted/60 px-3 py-2 text-center text-sm">
+            {t('items_bulk.page_selected', { count: visible.length })}{' '}
+            <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setSelected(new Set(filtered.map((item) => item._id)))}>
+              {needle ? t('items_bulk.select_all_matching', { count: filtered.length }) : t('items_bulk.select_all_items', { count: filtered.length })}
+            </button>
+          </div>
+        ) : null}
         <Card className="overflow-hidden py-0">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead className="pl-4">{t('items.col_item')}</TableHead>
+                <TableHead className="w-10 pl-4">
+                  <SelectBox
+                    label={t('items_bulk.select_page')}
+                    checked={allVisibleSelected}
+                    indeterminate={visibleSelected > 0 && !allVisibleSelected}
+                    onChange={toggleVisible}
+                  />
+                </TableHead>
+                <TableHead>{t('items.col_item')}</TableHead>
                 <TableHead className="text-right">{t('items.col_per_day')}</TableHead>
                 <TableHead className="text-right">{t('items.col_per_week')}</TableHead>
                 <TableHead className="text-right">{t('items.col_deposit')}</TableHead>
@@ -106,9 +190,17 @@ export function ItemsSection() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((item) => (
-                <TableRow key={item._id} className={cn('cursor-pointer', item.status === 'archived' && 'opacity-60')} onClick={() => setEditing(item)}>
-                  <TableCell className="pl-4">
+              {visible.map((item) => (
+                <TableRow
+                  key={item._id}
+                  data-state={selected.has(item._id) ? 'selected' : undefined}
+                  className={cn('cursor-pointer', item.status === 'archived' && 'opacity-60')}
+                  onClick={() => setEditing(item)}
+                >
+                  <TableCell className="w-10 pl-4" onClick={(event) => event.stopPropagation()}>
+                    <SelectBox label={t('items_bulk.select_item', { name: item.name })} checked={selected.has(item._id)} onChange={(on) => toggleOne(item._id, on)} />
+                  </TableCell>
+                  <TableCell>
                     <div className="flex flex-col">
                       <span className="font-medium">{item.name}</span>
                       <span className="text-xs text-muted-foreground">{item.category || t('items.no_category')}</span>
@@ -130,13 +222,33 @@ export function ItemsSection() {
                     )}
                   </TableCell>
                   <TableCell className="pr-4 text-right">
-                    <Button size="icon-sm" variant="ghost" aria-label={t('items.col_edit_aria', { name: item.name })}><Pencil /></Button>
+                    <div className="flex justify-end gap-1">
+                      <Button size="icon-sm" variant="ghost" aria-label={t('items.col_edit_aria', { name: item.name })}><Pencil /></Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label={t('items.delete_aria', { name: item.name })}
+                        onClick={(event) => { event.stopPropagation(); setDeleting(item); }}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          {filtered.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">{t('items.no_search_results', { search: query })}</p>
+          ) : null}
         </Card>
+        {filtered.length > visible.length ? (
+          <Button variant="outline" className="self-center" onClick={() => setShown((count) => count + ROWS_PER_PAGE)}>
+            {t('items.show_more', { count: Math.min(ROWS_PER_PAGE, filtered.length - visible.length) })}
+          </Button>
+        ) : null}
+        </>
       )}
 
       <ItemSheet
@@ -149,6 +261,28 @@ export function ItemsSection() {
         onClose={() => setEditing(null)}
         onSaved={reload}
       />
+
+      {storesInstalled ? (
+        <StoreImportDialog
+          open={importing}
+          onOpenChange={setImporting}
+          slotsLeft={slotsLeft}
+          money={money}
+          onImported={reload}
+        />
+      ) : null}
+
+      {deleting ? (
+        <DeleteItemDialog
+          item={deleting}
+          open
+          onOpenChange={(open) => { if (!open) setDeleting(null); }}
+          onDone={async () => {
+            setEditing(null);
+            await reload();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -183,6 +317,7 @@ function ItemSheet({ item, perItemRules, currency, money, defaults, onClose, onS
   }));
   const [saving, setSaving] = useState(false);
   const [pickingImage, setPickingImage] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const num = (key: keyof Draft, min = 0) => numberField(draft[key] as number, (value) => set(key, value as never), min);
@@ -330,11 +465,27 @@ function ItemSheet({ item, perItemRules, currency, money, defaults, onClose, onS
           </fieldset>
         </div>
 
-        <SheetFooter>
+        <SheetFooter className="flex-row items-center justify-between gap-2">
+          {!isNew && item ? (
+            <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={saving} onClick={() => setConfirmDelete(true)}>
+              <Trash2 data-icon="inline-start" />{t('items.btn_delete')}
+            </Button>
+          ) : <span />}
           <Button loading={saving} disabled={saving || !draft.name || draft.dailyRate <= 0 || weeklyTooLow || rangeInvalid} onClick={() => void save()}>
             {isNew ? t('items.btn_add') : t('items.btn_save')}
           </Button>
         </SheetFooter>
+        {!isNew && item && confirmDelete ? (
+          <DeleteItemDialog
+            item={item}
+            open
+            onOpenChange={setConfirmDelete}
+            onDone={async () => {
+              await onSaved();
+              onClose();
+            }}
+          />
+        ) : null}
       </SheetContent>
     </Sheet>
   );

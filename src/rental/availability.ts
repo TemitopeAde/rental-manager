@@ -292,11 +292,13 @@ export async function checkRange(
   if (start > latest) {
     return { ok: false, message: 'Pickups can be booked up to 180 days ahead.', occupied: rules.occupied, freeUnits: 0 };
   }
-  const closed = await blockedSet(item._id, [start, end], access);
+  const [closed, usage] = await Promise.all([
+    blockedSet(item._id, [start, end], access),
+    usageByDate(item._id, rules.occupied, access, excludeBookingId),
+  ]);
   if (closed.has(start) || closed.has(end)) {
     return { ok: false, message: 'Pickup and return cannot fall on a closed day.', occupied: rules.occupied, freeUnits: 0 };
   }
-  const usage = await usageByDate(item._id, rules.occupied, access, excludeBookingId);
   let freeUnits = item.unitCount;
   for (const date of rules.occupied) {
     const free = item.unitCount - (usage.get(date) ?? 0);

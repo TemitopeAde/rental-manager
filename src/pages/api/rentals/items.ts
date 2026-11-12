@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { merchantOnly } from '../../../rental/guard';
-import { createItem, listItems, updateItem } from '../../../rental/merchant';
+import { bulkDeleteItems, bulkUpdateItems, checkItemDelete, createItem, deleteItem, importStoreProducts, listItems, updateItem } from '../../../rental/merchant';
 import { json, readJson, str } from '../../../rental/http';
 import type { RentalItem } from '../../../rental/models';
 import { bookableItemIds, readPlan } from '../../../rental/plans';
@@ -25,6 +25,27 @@ export const POST: APIRoute = async ({ request }) => {
   const denied = await merchantOnly();
   if (denied) return denied;
   const body = await readJson(request);
+  // 'delete-check' only reads; 'delete' re-checks before removing anything.
+  if (str(body.action) === 'delete-check' || str(body.action) === 'delete') {
+    const itemId = str(body.itemId);
+    if (!itemId) return json({ ok: false, message: 'Choose an item.' }, 400);
+    const result = str(body.action) === 'delete' ? await deleteItem(itemId) : await checkItemDelete(itemId);
+    return json(result, result.ok ? 200 : 400);
+  }
+  if (str(body.action) === 'bulk-update') {
+    const result = await bulkUpdateItems(body.itemIds, { status: body.status, category: body.category });
+    return json(result, result.ok ? 200 : 400);
+  }
+  if (str(body.action) === 'bulk-delete') {
+    const result = await bulkDeleteItems(body.itemIds);
+    return json(result, result.ok ? 200 : 400);
+  }
+  if (str(body.action) === 'import-store') {
+    const productIds = Array.isArray(body.productIds) ? body.productIds.filter((id): id is string => typeof id === 'string') : [];
+    if (!productIds.length) return json({ ok: false, message: 'Choose at least one product.' }, 400);
+    const result = await importStoreProducts(productIds);
+    return json(result, result.ok ? 200 : 400);
+  }
   if (str(body.itemId)) {
     const result = await updateItem(str(body.itemId), body as Partial<RentalItem>);
     return json(result, result.ok ? 200 : 400);

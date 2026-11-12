@@ -13,6 +13,7 @@ import { getCurrentAppInstance } from './app-instance';
 import { defaultSettings } from './availability';
 import { insertRow, queryRows, removeRow, removeRows, updateRow, getRow, type Row } from './store';
 import { newBlockDates, type BlockRow } from './blocked-rules';
+import { itemDeleteCheck } from './item-delete-rules';
 import { getCatalogState, getStoreProduct, getStoreProductImageGalleries, listStoreCategories, matchingCategory } from './stores';
 import { emailBookingUpdate } from './emails';
 
@@ -30,8 +31,37 @@ export async function listItemPage(category?: string, status?: string, offset = 
   return { items: result.items.map((row) => asItem(row as Row)), hasMore: result.hasNext() };
 }
 
+/** Every item, read 1,000 rows at a time, so stores with thousands of rentals aren't cut off. */
 export async function listItems(category?: string, status?: string) {
-  return (await listItemPage(category, status)).items;
+  let query = queryRows(collections.items, merchant);
+  if (category) query = query.eq('category', category);
+  if (status) query = query.eq('status', status);
+  let page = await query.ascending('name').limit(1000).find();
+  const rows = [...page.items];
+  while (page.hasNext()) {
+    page = await page.next();
+    rows.push(...page.items);
+  }
+  return rows.map((row) => asItem(row as Row));
+}
+
+/** Items that count toward the plan limit (everything not archived), counted without loading rows. */
+async function liveItemTotal() {
+  return queryRows(collections.items, merchant).ne('status', 'archived').count();
+}
+
+/** Which of these store products are already linked to a rental item. */
+export async function linkedStoreProductIds(productIds: string[]): Promise<Set<string>> {
+  const linked = new Set<string>();
+  for (let start = 0; start < productIds.length; start += 100) {
+    const batch = productIds.slice(start, start + 100);
+    const found = await queryRows(collections.items, merchant).hasSome('storeProductId', batch).limit(1000).find();
+    found.items.forEach((row) => {
+      const id = text((row as Row).storeProductId);
+      if (id) linked.add(id);
+    });
+  }
+  return linked;
 }
 
 // Category tabs come from every active item, not the filtered page, so they stay put while filtering.
@@ -57,9 +87,7 @@ export async function findActiveItem(slugOrId: string) {
 
 export async function createItem(input: Partial<RentalItem>) {
   const plan = await readPlan(merchant);
-  const existing = await queryRows(collections.items, merchant).limit(1000).find();
-  const live = liveItemCount(existing.items);
-  if (plan.maxItems !== null && live >= plan.maxItems) {
+  if (plan.maxItems !== null && (await liveItemTotal()) >= plan.maxItems) {
     return { ok: false as const, message: `The ${plan.label} plan allows ${plan.maxItems} rental items. Upgrade to add more.` };
   }
   if (!input.name || !input.dailyRate || input.dailyRate <= 0) {
@@ -96,6 +124,73 @@ export async function createItem(input: Partial<RentalItem>) {
   return { ok: true as const, item: asItem(created) };
 }
 
+export type StoreImportSkip = 'linked' | 'missing' | 'no_price' | 'not_physical' | 'limit';
+
+/**
+ * Turns Wix Store products straight into rental items, so a merchant who sells from the store
+ * doesn't have to recreate each product by hand. Name, description, price and images come from
+ * the product (and keep syncing); rental rules start from the Settings defaults.
+ */
+export const STORE_IMPORT_BATCH = 25;
+
+export async function importStoreProducts(productIds: string[]) {
+  // The dashboard sends large imports in batches, so one request stays well inside the time limit.
+  const wanted = [...new Set(productIds.map((id) => id.trim()).filter(Boolean))].slice(0, STORE_IMPORT_BATCH);
+  const [plan, version, settings, linked] = await Promise.all([
+    readPlan(merchant),
+    getCatalogState(),
+    loadSettings(merchant),
+    linkedStoreProductIds(wanted),
+  ]);
+  if (version === 'STORES_NOT_INSTALLED') {
+    return { ok: false as const, message: 'Wix Stores is not installed on this site.', added: [], skipped: [] };
+  }
+  let live = plan.maxItems === null ? 0 : await liveItemTotal();
+  const added: RentalItem[] = [];
+  const skipped: Array<{ productId: string; name: string; reason: StoreImportSkip }> = [];
+  const products = await Promise.all(wanted.map((id) => (linked.has(id) ? null : getStoreProduct(id, version))));
+  const limitReached = () => plan.maxItems !== null && live >= plan.maxItems;
+
+  for (const [index, productId] of wanted.entries()) {
+    const product = products[index];
+    if (linked.has(productId)) { skipped.push({ productId, name: '', reason: 'linked' }); continue; }
+    if (!product) { skipped.push({ productId, name: '', reason: 'missing' }); continue; }
+    if (!product.physical) { skipped.push({ productId, name: product.name, reason: 'not_physical' }); continue; }
+    if (product.dailyRate <= 0) { skipped.push({ productId, name: product.name, reason: 'no_price' }); continue; }
+    if (limitReached()) { skipped.push({ productId, name: product.name, reason: 'limit' }); continue; }
+    const name = product.name || 'Untitled product';
+    const matched = settings.storeCategoryVersion === version ? matchingCategory(product, settings.storeCategories) : undefined;
+    const created = await insertRow(
+      collections.items,
+      {
+        name,
+        description: product.description,
+        // The `store-<productId>` slug marks items that mirror a store product.
+        slug: `store-${product.id}`,
+        category: matched?.name ?? '',
+        unitCount: 1,
+        dailyRate: product.dailyRate,
+        weeklyRate: 0,
+        depositAmount: 0,
+        minDays: settings.defaultMinDays,
+        maxDays: settings.defaultMaxDays,
+        bufferDays: settings.defaultBufferDays,
+        leadDays: settings.defaultLeadDays,
+        status: 'active',
+        storeProductId: product.id,
+        // Explicitly enabled: the merchant chose this product, whatever the rental categories say.
+        storeRentalOverride: 'enabled',
+        images: storeGallery(product.images, name),
+      },
+      merchant,
+    );
+    linked.add(product.id);
+    live += 1;
+    added.push(asItem(created));
+  }
+  return { ok: true as const, added, skipped, limitReached: limitReached() };
+}
+
 export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   const row = await getRow(collections.items, itemId, merchant);
   if (!row) return { ok: false as const, message: 'Item not found.' };
@@ -126,8 +221,7 @@ export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   }
   // Restoring an archived item adds one back toward the limit, the same as creating one.
   if (text(row.status) === 'archived' && text(next.status) !== 'archived' && plan.maxItems !== null) {
-    const existing = await queryRows(collections.items, merchant).limit(1000).find();
-    if (liveItemCount(existing.items) >= plan.maxItems) {
+    if ((await liveItemTotal()) >= plan.maxItems) {
       return { ok: false as const, message: `The ${plan.label} plan allows ${plan.maxItems} rental items. Upgrade or archive another item first.` };
     }
   }
@@ -137,6 +231,86 @@ export async function updateItem(itemId: string, patch: Partial<RentalItem>) {
   }
   const updated = await updateRow(collections.items, next, merchant);
   return { ok: true as const, item: asItem(updated) };
+}
+
+export const BULK_ITEM_BATCH = 50;
+const BULK_STATUSES = ['active', 'hidden', 'archived'] as const;
+
+/** Runs `task` over `ids`, a few at a time, so a batch doesn't fire dozens of writes at once. */
+async function inParallel<T>(ids: string[], task: (id: string) => Promise<T>, width = 5): Promise<T[]> {
+  const results: T[] = [];
+  for (let start = 0; start < ids.length; start += width) {
+    results.push(...(await Promise.all(ids.slice(start, start + width).map(task))));
+  }
+  return results;
+}
+
+function bulkIds(itemIds: unknown): string[] {
+  const list = Array.isArray(itemIds) ? itemIds.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())) : [];
+  return [...new Set(list)].slice(0, BULK_ITEM_BATCH);
+}
+
+/**
+ * Applies the same status and/or category to many items. Each item goes through updateItem, so
+ * plan limits still apply (restoring archived items stops once the limit is reached).
+ */
+export async function bulkUpdateItems(itemIds: unknown, patch: { status?: unknown; category?: unknown }) {
+  const ids = bulkIds(itemIds);
+  const change: Partial<RentalItem> = {};
+  if (BULK_STATUSES.includes(patch.status as never)) change.status = patch.status as RentalItem['status'];
+  if (typeof patch.category === 'string') change.category = patch.category.trim();
+  if (!ids.length || !Object.keys(change).length) return { ok: false as const, message: 'Choose items and a change to apply.', updated: 0, failed: [] };
+  const results = await inParallel(ids, async (id) => ({ id, result: await updateItem(id, change).catch((error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) })) }));
+  return {
+    ok: true as const,
+    updated: results.filter(({ result }) => result.ok).length,
+    failed: results.flatMap(({ id, result }) => (result.ok ? [] : [{ id, message: result.message }])),
+  };
+}
+
+/** Deletes each item that is safe to delete; the rest are reported so the dashboard can offer Archive. */
+export async function bulkDeleteItems(itemIds: unknown) {
+  const ids = bulkIds(itemIds);
+  if (!ids.length) return { ok: false as const, message: 'Choose items to delete.', deleted: 0, blocked: [] };
+  const results = await inParallel(ids, async (id) => ({ id, result: await deleteItem(id).catch((error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) })) }), 3);
+  return {
+    ok: true as const,
+    deleted: results.filter(({ result }) => result.ok).length,
+    blocked: results.flatMap(({ id, result }) => (result.ok ? [] : [{ id, message: result.message ?? '' }])),
+  };
+}
+
+async function itemBookings(itemId: string) {
+  const result = await queryRows(collections.bookings, merchant).eq('itemId', itemId).limit(1000).find();
+  return result.items.map((row) => ({ _id: row._id, status: text(row.status), idempotencyKey: text(row.idempotencyKey) }));
+}
+
+/** Whether an item can be deleted for good, and if not, why (see item-delete-rules.ts). */
+export async function checkItemDelete(itemId: string) {
+  const row = await getRow(collections.items, itemId, merchant);
+  if (!row) return { ok: false as const, message: 'Item not found.' };
+  const check = itemDeleteCheck(await itemBookings(itemId), Boolean(text(row.storeProductId)));
+  return { ok: true as const, name: text(row.name), status: text(row.status, 'active'), ...check };
+}
+
+/** Permanently deletes an item with nothing depending on it, plus its sample bookings, unit claims and closed dates. */
+export async function deleteItem(itemId: string, source = 'dashboard') {
+  const checked = await checkItemDelete(itemId);
+  if (!checked.ok) return checked;
+  if (!checked.allowed) {
+    return { ok: false as const, reason: checked.reason, message: `${checked.name} can't be deleted. Archive it instead.` };
+  }
+  const ids = (rows: Array<{ _id?: unknown }>) => rows.map((row) => row._id).filter((id): id is string => typeof id === 'string');
+  const [claims, blocks] = await Promise.all([
+    queryRows(collections.unitDays, merchant).eq('itemId', itemId).limit(1000).find(),
+    queryRows(collections.blockedDates, merchant).eq('itemId', itemId).limit(1000).find(),
+  ]);
+  await removeRows(collections.unitDays, ids(claims.items), merchant);
+  await removeRows(collections.blockedDates, ids(blocks.items), merchant);
+  await removeRows(collections.bookings, checked.sampleBookingIds, merchant);
+  await removeRow(collections.items, itemId, merchant);
+  await insertRow(collections.audit, { action: 'item-delete', summary: `Deleted item ${checked.name}.`, bookingId: '', source, actor: source }, merchant);
+  return { ok: true as const, name: checked.name };
 }
 
 /** Refreshes existing linked rental galleries from their Wix Stores product records. */
@@ -281,6 +455,9 @@ export async function resolveStoreRentalItem(productId: string): Promise<{ item:
   const found = await queryRows(collections.items, merchant).eq('storeProductId', productId).limit(1).find();
   const existing = found.items[0] as Row | undefined;
   if (existing) {
+    // An archived or hidden rental stays off the product page, like it does everywhere else on the site.
+    // Checked before anything else, and before the sync below, so the merchant's status is never overwritten.
+    if (asItem(existing).status !== 'active') return none;
     if (!(await canBookItem(existing._id, merchant, plan))) return none;
   } else if (plan.maxItems !== null) {
     const allItems = await queryRows(collections.items, merchant).limit(1000).find();

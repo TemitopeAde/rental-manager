@@ -194,7 +194,15 @@ async function addNotices(bookingId: string, keys: string[]) {
 }
 
 /** Starts a sweep after the response is sent, if one is due. Never throws. */
+// Each kick reads settings to see whether a sweep is due; at most one kick a minute per server
+// instance is plenty, since a sweep only runs every SWEEP_EVERY_MS anyway.
+const KICK_EVERY_MS = 60 * 1000;
+let lastKick = 0;
+
 export function kickReturnSweep(): void {
+  const now = Date.now();
+  if (now - lastKick < KICK_EVERY_MS) return;
+  lastKick = now;
   runInBackground('overdue sweep', () => sweepReturns());
 }
 
